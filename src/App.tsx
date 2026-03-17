@@ -2263,16 +2263,18 @@ export default function App() {
       }
     }
 
-    if (goldEarned > 0) setGold(prev => prev + goldEarned);
+    if (goldEarned > 0) {
+      goldRef.current += goldEarned;
+      setGold(goldRef.current);
+    }
     if (livesLost > 0) {
-      setLives(prev => {
-        const next = prev - livesLost;
-        if (next <= 0) isGameOverTriggered = true;
-        return next;
-      });
+      livesRef.current = Math.max(0, livesRef.current - livesLost);
+      setLives(livesRef.current);
+      if (livesRef.current <= 0) isGameOverTriggered = true;
     }
     if (isGameOverTriggered) {
       setGameOver(true);
+      gameOverRef.current = true;
       if (user && gameMode === GameMode.ENDLESS) {
         saveProgress(undefined, undefined, undefined, undefined, undefined, null, undefined, undefined, undefined, goldRef.current, livesRef.current);
       }
