@@ -1,0 +1,106 @@
+{
+  "entities": {
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User feedback and ratings for the game.",
+      "type": "object",
+      "properties": {
+        "rating": {
+          "type": "integer",
+          "description": "Rating from 1 to 10."
+        },
+        "message": {
+          "type": "string",
+          "description": "Feedback message from the user."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the feedback was submitted."
+        }
+      },
+      "required": ["rating", "timestamp"]
+    },
+    "UserProgress": {
+      "title": "UserProgress",
+      "description": "Saves user game progress.",
+      "type": "object",
+      "properties": {
+        "unlockedSectorCount": {
+          "type": "integer",
+          "description": "Number of sectors unlocked in campaign."
+        },
+        "highestEndlessWaves": {
+          "type": "object",
+          "description": "Highest wave reached in endless mode per map."
+        },
+        "totalWavesSurvived": {
+          "type": "integer",
+          "description": "Total waves survived across all sessions."
+        },
+        "totalSessionsSaved": {
+          "type": "integer",
+          "description": "Total times a session was saved to the library."
+        },
+        "commanderExp": {
+          "type": "integer",
+          "description": "Experience points for commander leveling."
+        },
+        "medals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Earned medals and achievements."
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last time progress was synced."
+        }
+      },
+      "required": ["unlockedSectorCount", "lastUpdated"]
+    },
+    "EndlessSession": {
+      "title": "EndlessSession",
+      "description": "An active endless mode game session.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "commanderLevel": { "type": "integer" },
+        "mapId": { "type": "string" },
+        "difficulty": { "type": "string" },
+        "wave": { "type": "integer" },
+        "gold": { "type": "integer" },
+        "lives": { "type": "integer" },
+        "turrets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string" },
+              "gridX": { "type": "integer" },
+              "gridY": { "type": "integer" },
+              "level": { "type": "integer" }
+            }
+          }
+        },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "mapId", "difficulty", "wave", "gold", "lives", "turrets", "lastUpdated"]
+    }
+  },
+  "firestore": {
+    "feedback": {
+      "schema": "Feedback",
+      "description": "Collection of user feedback and ratings."
+    },
+    "users/{userId}/progress": {
+      "schema": "UserProgress",
+      "description": "User-specific game progress."
+    },
+    "endless_sessions/{sessionId}": {
+      "schema": "EndlessSession",
+      "description": "Active endless game sessions."
+    }
+  }
+}

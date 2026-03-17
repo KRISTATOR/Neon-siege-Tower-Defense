@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email == "kristianai2011@gmail.com" && 
+             request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidFeedback(data) {
+      return data.rating is int && data.rating >= 1 && data.rating <= 10 &&
+             (data.message == null || (data.message is string && data.message.size() <= 1000)) &&
+             data.timestamp is string;
+    }
+
+    function isValidProgress(data) {
+      return data.unlockedSectorCount is int && data.unlockedSectorCount >= 1 &&
+             data.lastUpdated is string &&
+             (data.highestEndlessWaves == null || data.highestEndlessWaves is map) &&
+             (data.totalWavesSurvived == null || data.totalWavesSurvived is int) &&
+             (data.totalSessionsSaved == null || data.totalSessionsSaved is int) &&
+             (data.commanderExp == null || data.commanderExp is int) &&
+             (data.medals == null || data.medals is list) &&
+             (data.unlockedTurrets == null || data.unlockedTurrets is list) &&
+             (data.unlockedUpgrades == null || data.unlockedUpgrades is list) &&
+             (data.encounteredEnemies == null || data.encounteredEnemies is list);
+    }
+
+    function isValidEndlessSession(data) {
+      return data.userId is string &&
+             data.userName is string &&
+             (data.commanderLevel == null || data.commanderLevel is int) &&
+             data.mapId is string &&
+             data.difficulty is string &&
+             data.wave is int &&
+             data.gold is int &&
+             data.lives is int &&
+             data.turrets is list &&
+             data.lastUpdated is string;
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if isValidFeedback(request.resource.data);
+      allow read: if isAdmin();
+    }
+
+    match /users/{userId}/progress/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidProgress(request.resource.data);
+    }
+
+    match /endless_sessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (sessionId.startsWith(request.auth.uid) || isAdmin()) && isValidEndlessSession(request.resource.data);
+      allow delete: if isAuthenticated() && (sessionId.startsWith(request.auth.uid) || isAdmin());
+    }
+  }
+}
