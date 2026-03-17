@@ -42,10 +42,16 @@ import {
   Minus,
   Square,
   Hexagon,
-  Circle
+  Circle,
+  Globe,
+  Map as MapIcon,
+  Upload,
+  Download,
+  Search,
+  Share2
 } from 'lucide-react';
 import { db, auth } from './firebase';
-import { collection, addDoc, getDocs, query, orderBy, doc, setDoc, getDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, doc, setDoc, getDoc, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
 
 // --- Constants & Types ---
@@ -1677,6 +1683,352 @@ const handleFirestoreError = (error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 };
 
+// --- Level Builder Component ---
+interface LevelBuilderProps {
+  onClose: () => void;
+  user: User | null;
+}
+
+const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [cols, setCols] = useState(20);
+  const [rows, setRows] = useState(12);
+  const [grid, setGrid] = useState<number[]>(new Array(20 * 12).fill(0)); // 0: buildable, 1: path, 2: spawn, 3: goal
+  const [selectedTool, setSelectedTool] = useState<number>(1);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleCell = (index: number) => {
+    const newGrid = [...grid];
+    if (newGrid[index] === selectedTool) {
+      newGrid[index] = 0;
+    } else {
+      if (selectedTool === 2) {
+        const oldSpawn = newGrid.indexOf(2);
+        if (oldSpawn !== -1) newGrid[oldSpawn] = 0;
+      }
+      if (selectedTool === 3) {
+        const oldGoal = newGrid.indexOf(3);
+        if (oldGoal !== -1) newGrid[oldGoal] = 0;
+      }
+      newGrid[index] = selectedTool;
+    }
+    setGrid(newGrid);
+  };
+
+  const findPath = () => {
+    const spawnIdx = grid.indexOf(2);
+    const goalIdx = grid.indexOf(3);
+    if (spawnIdx === -1 || goalIdx === -1) return null;
+
+    const spawn = { x: spawnIdx % cols, y: Math.floor(spawnIdx / cols) };
+    const goal = { x: goalIdx % cols, y: Math.floor(goalIdx / cols) };
+
+    const queue: { pos: Point, path: Point[] }[] = [{ pos: spawn, path: [spawn] }];
+    const visited = new Set<string>();
+    visited.add(`${spawn.x},${spawn.y}`);
+
+    while (queue.length > 0) {
+      const { pos, path } = queue.shift()!;
+      if (pos.x === goal.x && pos.y === goal.y) return path;
+
+      const neighbors = [
+        { x: pos.x + 1, y: pos.y },
+        { x: pos.x - 1, y: pos.y },
+        { x: pos.x, y: pos.y + 1 },
+        { x: pos.x, y: pos.y - 1 },
+      ];
+
+      for (const n of neighbors) {
+        const idx = n.y * cols + n.x;
+        if (n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && 
+            (grid[idx] === 1 || grid[idx] === 3) && !visited.has(`${n.x},${n.y}`)) {
+          visited.add(`${n.x},${n.y}`);
+          queue.push({ pos: n, path: [...path, n] });
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleUpload = async () => {
+    if (!user) return;
+    if (!name.trim()) { setError('Please name your map.'); return; }
+    
+    const path = findPath();
+    if (!path) { setError('No valid path from Spawn to Goal!'); return; }
+
+    setIsUploading(true);
+    try {
+      await addDoc(collection(db, 'community_maps'), {
+        userId: user.uid,
+        userName: user.displayName || 'Anonymous',
+        name,
+        description,
+        cols,
+        rows,
+        grid,
+        paths: [path],
+        createdAt: new Date().toISOString(),
+        likes: 0,
+        plays: 0
+      });
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError('Failed to upload map.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
+    >
+      <div className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full">
+        <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
+              <MapIcon className="w-6 h-6 text-cyan-400" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Level Builder</h2>
+              <p className="text-xs text-white/40 font-bold uppercase tracking-widest">Design and Share Community Maps</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-2xl transition-colors">
+            <X className="w-6 h-6 text-white/40" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col md:flex-row gap-8">
+          {/* Editor Grid */}
+          <div className="flex-1 flex flex-col gap-4">
+            <div 
+              className="grid gap-px bg-white/5 border border-white/10 rounded-xl overflow-hidden self-start"
+              style={{ 
+                gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                width: 'fit-content'
+              }}
+            >
+              {grid.map((cell, i) => (
+                <button
+                  key={i}
+                  onClick={() => toggleCell(i)}
+                  className={`w-6 h-6 md:w-8 md:h-8 transition-colors ${
+                    cell === 1 ? 'bg-white/20' : 
+                    cell === 2 ? 'bg-emerald-500/50' : 
+                    cell === 3 ? 'bg-rose-500/50' : 
+                    'bg-black/40 hover:bg-white/5'
+                  }`}
+                />
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { id: 1, name: 'Path', icon: <Activity className="w-4 h-4" />, color: 'bg-white/20' },
+                { id: 2, name: 'Spawn', icon: <Play className="w-4 h-4" />, color: 'bg-emerald-500/50' },
+                { id: 3, name: 'Goal', icon: <Target className="w-4 h-4" />, color: 'bg-rose-500/50' },
+              ].map(tool => (
+                <button
+                  key={tool.id}
+                  onClick={() => setSelectedTool(tool.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all uppercase tracking-widest font-bold text-[10px] ${
+                    selectedTool === tool.id ? 'bg-white/10 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-white/40'
+                  }`}
+                >
+                  <div className={`w-3 h-3 rounded-sm ${tool.color}`} />
+                  {tool.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Metadata Form */}
+          <div className="w-full md:w-80 flex flex-col gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Map Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter map name..."
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Annotation / Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Write a short description..."
+                rows={4}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 transition-colors resize-none"
+              />
+            </div>
+
+            {error && (
+              <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs font-bold">
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleUpload}
+              disabled={isUploading || !user}
+              className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-black uppercase tracking-widest py-4 rounded-2xl transition-all shadow-[0_0_30px_rgba(6,182,212,0.3)] flex items-center justify-center gap-2"
+            >
+              {isUploading ? (
+                <Activity className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <Upload className="w-5 h-5" />
+                  Publish Map
+                </>
+              )}
+            </button>
+            {!user && <p className="text-[9px] text-rose-400 text-center font-bold uppercase tracking-widest">Sign in to publish maps</p>}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// --- Community Maps Component ---
+interface CommunityMapsProps {
+  onClose: () => void;
+  onPlay: (map: any) => void;
+}
+
+const CommunityMaps: React.FC<CommunityMapsProps> = ({ onClose, onPlay }) => {
+  const [maps, setMaps] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    const q = query(collection(db, 'community_maps'), orderBy('createdAt', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setMaps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    }, (error) => {
+      console.error(error);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const filteredMaps = maps.filter(m => 
+    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.userName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
+    >
+      <div className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full">
+        <div className="p-6 md:p-8 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/5">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
+              <Globe className="w-6 h-6 text-purple-400" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Community Maps</h2>
+              <p className="text-xs text-white/40 font-bold uppercase tracking-widest">Explore Player-Created Battlefields</p>
+            </div>
+          </div>
+          
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search maps or authors..."
+              className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors"
+            />
+          </div>
+
+          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-2xl transition-colors">
+            <X className="w-6 h-6 text-white/40" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 md:p-8">
+          {loading ? (
+            <div className="h-64 flex flex-col items-center justify-center gap-4">
+              <Activity className="w-12 h-12 text-purple-500 animate-spin" />
+              <p className="text-white/40 font-bold uppercase tracking-widest text-xs">Scanning Network...</p>
+            </div>
+          ) : filteredMaps.length === 0 ? (
+            <div className="h-64 flex flex-col items-center justify-center gap-4 text-center">
+              <MapIcon className="w-16 h-16 text-white/10" />
+              <h3 className="text-xl font-bold text-white/60 uppercase tracking-widest">No Maps Found</h3>
+              <p className="text-white/30 text-sm max-w-xs">Be the first to create and share a map with the community!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredMaps.map((map) => (
+                <button
+                  key={map.id}
+                  onClick={() => onPlay(map)}
+                  className="group relative bg-white/5 border border-white/10 rounded-3xl p-6 hover:bg-white/10 hover:border-purple-500/50 transition-all text-left flex flex-col gap-4 overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <MapIcon className="w-24 h-24" />
+                  </div>
+                  
+                  <div className="flex justify-between items-start">
+                    <div className="px-3 py-1 bg-purple-500/20 rounded text-[10px] font-bold text-purple-400 uppercase tracking-widest border border-purple-500/30">
+                      {map.cols}x{map.rows}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Published</p>
+                      <p className="text-[10px] text-white/40 font-mono">{new Date(map.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xl font-black uppercase italic tracking-tight text-white group-hover:text-purple-400 transition-colors mb-1">{map.name}</h3>
+                    <p className="text-white/40 text-xs uppercase tracking-widest font-bold mb-2">By {map.userName}</p>
+                    <p className="text-white/30 text-[10px] line-clamp-2 leading-relaxed">{map.description || 'No description provided.'}</p>
+                  </div>
+
+                  <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+                    <div className="flex gap-4">
+                      <div className="flex items-center gap-1.5">
+                        <Play className="w-3 h-3 text-emerald-400" />
+                        <span className="text-[10px] font-bold text-white/40">{map.plays || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Star className="w-3 h-3 text-amber-400" />
+                        <span className="text-[10px] font-bold text-white/40">{map.likes || 0}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Deploy</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
@@ -1698,6 +2050,9 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showLevelBuilder, setShowLevelBuilder] = useState(false);
+  const [showCommunityMaps, setShowCommunityMaps] = useState(false);
+  const [communityMaps, setCommunityMaps] = useState<any[]>([]);
   const [selectedLibraryUnit, setSelectedLibraryUnit] = useState<TurretType | EnemyType | null>(null);
   const [libraryUnitType, setLibraryUnitType] = useState<'turret' | 'enemy' | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -2949,6 +3304,57 @@ export default function App() {
     }
   };
 
+  const onPlayCommunityMap = (mapData: any) => {
+    const config: MapConfig = {
+      id: mapData.id,
+      name: mapData.name,
+      cols: mapData.cols,
+      rows: mapData.rows,
+      paths: mapData.paths,
+      difficulty: 3
+    };
+    
+    setCurrentMapConfig(config);
+    setGameMode(GameMode.ENDLESS);
+    setDifficulty(Difficulty.MEDIUM);
+    const difficultyConfig = DIFFICULTY_CONFIGS[Difficulty.MEDIUM];
+    setGold(difficultyConfig.gold);
+    setLives(difficultyConfig.lives);
+    setWave(0);
+    setGameOver(false);
+    setIsWaveActive(false);
+    setUnlockedTurrets(new Set([TurretType.BASIC]));
+    setUnlockedUpgrades(new Set());
+    setInventory({
+      [TurretType.BASIC]: 0,
+      [TurretType.SNIPER]: 0,
+      [TurretType.FROST]: 0,
+      [TurretType.GATLING]: 0,
+      [TurretType.TESLA]: 0,
+      [TurretType.MORTAR]: 0,
+      [TurretType.SONIC]: 0,
+      [TurretType.BEAM]: 0,
+      [TurretType.MISSILE]: 0,
+      [TurretType.VOID]: 0,
+      [TurretType.FLAME]: 0,
+      [TurretType.SHOCK]: 0,
+      [TurretType.ORBITAL]: 0,
+      [TurretType.GRAVITY]: 0,
+      [TurretType.PLASMA]: 0,
+    });
+    turretsRef.current = [];
+    enemiesRef.current = [];
+    setShowCommunityMaps(false);
+    
+    // Increment play count
+    try {
+      const mapRef = doc(db, 'community_maps', mapData.id);
+      setDoc(mapRef, { plays: (mapData.plays || 0) + 1 }, { merge: true });
+    } catch (err) {
+      console.error('Failed to increment play count:', err);
+    }
+  };
+
   const startCampaignSector = (index: number) => {
     const config = DIFFICULTY_CONFIGS[Difficulty.MEDIUM];
     const sector = CAMPAIGN_SECTORS[index];
@@ -3657,6 +4063,40 @@ export default function App() {
                       </button>
                     </div>
 
+                    <div className={`grid grid-cols-1 md:grid-cols-2 ${isMobile && isLandscape ? 'gap-4 mb-4' : 'gap-4 md:gap-8 mb-12'}`}>
+                      <button
+                        onClick={() => setShowLevelBuilder(true)}
+                        className={`group relative bg-white/5 border border-white/10 rounded-[1.5rem] md:rounded-[2rem] hover:bg-white/10 hover:border-cyan-500/50 transition-all text-left overflow-hidden ${isMobile && isLandscape ? 'p-6' : 'p-6 md:p-10'}`}
+                      >
+                        <div className="absolute top-0 right-0 p-4 md:p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                          <MapIcon className={`${isMobile && isLandscape ? 'w-12 h-12' : 'w-20 h-20 md:w-32 md:h-32'}`} />
+                        </div>
+                        <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight mb-1 md:mb-4 text-cyan-400`}>Level Builder</h2>
+                        <p className={`text-white/60 leading-relaxed ${isMobile && isLandscape ? 'text-[8px] mb-2' : 'text-[10px] md:text-sm mb-4 md:mb-8'}`}>
+                          Design your own battlefields and share them with the world.
+                        </p>
+                        <div className="flex items-center gap-2 text-cyan-500 font-bold uppercase tracking-widest text-[8px] md:text-xs">
+                          Create Protocol <ChevronRight className="w-3 h-3 md:w-4 md:h-4" />
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => setShowCommunityMaps(true)}
+                        className={`group relative bg-white/5 border border-white/10 rounded-[1.5rem] md:rounded-[2rem] hover:bg-white/10 hover:border-purple-500/50 transition-all text-left overflow-hidden ${isMobile && isLandscape ? 'p-6' : 'p-6 md:p-10'}`}
+                      >
+                        <div className="absolute top-0 right-0 p-4 md:p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                          <Globe className={`${isMobile && isLandscape ? 'w-12 h-12' : 'w-20 h-20 md:w-32 md:h-32'}`} />
+                        </div>
+                        <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight mb-1 md:mb-4 text-purple-400`}>Community Maps</h2>
+                        <p className={`text-white/60 leading-relaxed ${isMobile && isLandscape ? 'text-[8px] mb-2' : 'text-[10px] md:text-sm mb-4 md:mb-8'}`}>
+                          Play custom maps created by other commanders.
+                        </p>
+                        <div className="flex items-center gap-2 text-purple-500 font-bold uppercase tracking-widest text-[8px] md:text-xs">
+                          Explore Network <ChevronRight className="w-3 h-3 md:w-4 md:h-4" />
+                        </div>
+                      </button>
+                    </div>
+
                     <div className="flex flex-col md:flex-row gap-4 justify-center">
                       <button
                         onClick={() => setShowCommanderProfile(true)}
@@ -4310,6 +4750,26 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* Level Builder Modal */}
+          <AnimatePresence>
+            {showLevelBuilder && (
+              <LevelBuilder 
+                onClose={() => setShowLevelBuilder(false)} 
+                user={user}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Community Maps Modal */}
+          <AnimatePresence>
+            {showCommunityMaps && (
+              <CommunityMaps 
+                onClose={() => setShowCommunityMaps(false)} 
+                onPlay={onPlayCommunityMap}
+              />
+            )}
+          </AnimatePresence>
 
           {isRetractMode && (
             <div className={`absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none ${isMobile && isLandscape ? 'top-2' : 'top-10'}`}>

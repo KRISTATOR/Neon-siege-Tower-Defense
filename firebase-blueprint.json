@@ -87,12 +87,51 @@
         "lastUpdated": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "userName", "mapId", "difficulty", "wave", "gold", "lives", "turrets", "lastUpdated"]
+    },
+    "CommunityMap": {
+      "title": "CommunityMap",
+      "description": "A player-created map shared with the community.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "cols": { "type": "integer" },
+        "rows": { "type": "integer" },
+        "grid": { 
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Flat array representing the grid (0: empty, 1: path, 2: spawn, 3: goal)"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": { "type": "integer" },
+                "y": { "type": "integer" }
+              }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likes": { "type": "integer" },
+        "plays": { "type": "integer" }
+      },
+      "required": ["userId", "userName", "name", "cols", "rows", "grid", "paths", "createdAt"]
     }
   },
   "firestore": {
     "feedback": {
       "schema": "Feedback",
       "description": "Collection of user feedback and ratings."
+    },
+    "community_maps": {
+      "schema": "CommunityMap",
+      "description": "Public collection of player-created maps."
     },
     "users/{userId}/progress": {
       "schema": "UserProgress",
