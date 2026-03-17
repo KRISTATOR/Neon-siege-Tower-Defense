@@ -58,10 +58,10 @@ service cloud.firestore {
       allow write: if isOwner(userId) && isValidProgress(request.resource.data);
     }
 
-    match /endless_sessions/{sessionId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (sessionId.startsWith(request.auth.uid) || isAdmin()) && isValidEndlessSession(request.resource.data);
-      allow delete: if isAuthenticated() && (sessionId.startsWith(request.auth.uid) || isAdmin());
+    match /users/{userId}/endless_sessions/{sessionId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidEndlessSession(request.resource.data);
+      allow delete: if isOwner(userId);
     }
   }
 }

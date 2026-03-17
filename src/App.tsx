@@ -1730,7 +1730,7 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthReady && user) {
-      const path = 'endless_sessions';
+      const path = `users/${user.uid}/endless_sessions`;
       const q = query(collection(db, path), orderBy('lastUpdated', 'desc'));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -1815,9 +1815,9 @@ export default function App() {
         updatedSessions[mapId] = newEndlessSession;
         setEndlessSessions(updatedSessions);
 
-        // Sync to global library if in endless mode
+        // Sync to user-specific library if in endless mode
         if (gameMode === GameMode.ENDLESS) {
-          const libraryPath = `endless_sessions/${user.uid}_${mapId}`;
+          const libraryPath = `users/${user.uid}/endless_sessions/${mapId}`;
           await setDoc(doc(db, libraryPath), {
             ...newEndlessSession,
             userId: user.uid,
@@ -1831,8 +1831,8 @@ export default function App() {
         delete updatedSessions[mapId];
         setEndlessSessions(updatedSessions);
 
-        // Remove from global library
-        const libraryPath = `endless_sessions/${user.uid}_${mapId}`;
+        // Remove from user-specific library
+        const libraryPath = `users/${user.uid}/endless_sessions/${mapId}`;
         await deleteDoc(doc(db, libraryPath));
       }
 
@@ -2994,6 +2994,54 @@ export default function App() {
                     className="w-full py-2 text-[10px] uppercase tracking-widest text-white/40 hover:text-white transition-all"
                   >
                     Back to Shop
+                  </button>
+                </div>
+              </div>
+            ) : selectedTurretType ? (
+              <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-left-4 duration-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-xl bg-black/40 border border-cyan-500/20" style={{ color: TURRET_CONFIGS[selectedTurretType].color }}>
+                      {TURRET_CONFIGS[selectedTurretType].icon}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase italic tracking-tight text-white">{TURRET_CONFIGS[selectedTurretType].name}</h3>
+                      <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-mono font-bold">Ready to Deploy</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedTurretType(null)}
+                    className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <p className="text-[10px] text-white/60 leading-relaxed italic border-l-2 border-cyan-500/30 pl-3">
+                    {TURRET_CONFIGS[selectedTurretType].description}
+                  </p>
+                  
+                  <div className="grid grid-cols-2 gap-4 py-3 border-y border-white/5">
+                    <div>
+                      <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Damage</p>
+                      <p className="text-sm font-mono font-bold text-white">{TURRET_CONFIGS[selectedTurretType].damage}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Range</p>
+                      <p className="text-sm font-mono font-bold text-white">{TURRET_CONFIGS[selectedTurretType].range.toFixed(1)}</p>
+                    </div>
+                  </div>
+
+                  <div className="py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-black uppercase tracking-widest text-xs text-center border border-cyan-500/20 animate-pulse">
+                    Click Map to Place
+                  </div>
+
+                  <button 
+                    onClick={() => setSelectedTurretType(null)}
+                    className="w-full py-2 text-[10px] uppercase tracking-widest text-white/40 hover:text-white transition-all"
+                  >
+                    Cancel Placement
                   </button>
                 </div>
               </div>
@@ -4502,57 +4550,6 @@ export default function App() {
               )}
 
             {/* Removed absolute overlay to prevent blocking map */}
-            {selectedTurretType && (
-              <motion.div
-                key="selected-inventory-overlay"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-4 left-4 right-4 md:left-[340px] md:right-auto z-30"
-              >
-                <div className={`bg-black/90 backdrop-blur-2xl border border-cyan-500/50 rounded-2xl shadow-2xl flex flex-col ${isMobile && isLandscape ? 'p-2 gap-2' : 'p-4 gap-4'} min-w-[300px]`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`${isMobile && isLandscape ? 'p-1.5 rounded-lg' : 'p-3 rounded-xl'} bg-black/40 border border-cyan-500/20`} style={{ color: TURRET_CONFIGS[selectedTurretType].color }}>
-                        {TURRET_CONFIGS[selectedTurretType].icon}
-                      </div>
-                      <div>
-                        <h3 className={`${isMobile && isLandscape ? 'text-[10px]' : 'text-sm'} font-black uppercase italic tracking-tight text-white`}>{TURRET_CONFIGS[selectedTurretType].name}</h3>
-                        <p className="text-[8px] md:text-[10px] text-cyan-400 uppercase tracking-widest font-mono font-bold">Ready for Deployment</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSelectedTurretType(null)}
-                      className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <p className="text-[10px] text-white/60 leading-relaxed italic border-l-2 border-cyan-500/30 pl-3">
-                      {TURRET_CONFIGS[selectedTurretType].description}
-                    </p>
-                    
-                    <div className="grid grid-cols-2 gap-4 py-2 border-y border-white/5">
-                      <div>
-                        <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Damage</p>
-                        <p className="text-sm font-mono font-bold text-white">{TURRET_CONFIGS[selectedTurretType].damage}</p>
-                      </div>
-                      <div>
-                        <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Range</p>
-                        <p className="text-sm font-mono font-bold text-white">{TURRET_CONFIGS[selectedTurretType].range.toFixed(1)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="py-3 rounded-xl bg-cyan-500/10 text-cyan-400 font-black uppercase tracking-widest text-[10px] text-center border border-cyan-500/20 animate-pulse">
-                    Click Map to Place
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
             {gameOver && (
               <motion.div
                 key="game-over-overlay"

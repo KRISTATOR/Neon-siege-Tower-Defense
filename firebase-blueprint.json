@@ -98,9 +98,9 @@
       "schema": "UserProgress",
       "description": "User-specific game progress."
     },
-    "endless_sessions/{sessionId}": {
+    "users/{userId}/endless_sessions/{sessionId}": {
       "schema": "EndlessSession",
-      "description": "Active endless game sessions."
+      "description": "User-specific active endless game sessions."
     }
   }
 }
