@@ -1702,58 +1702,42 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
   const [possiblePaths, setPossiblePaths] = useState<Point[][]>([]);
   const [currentPathIndex, setCurrentPathIndex] = useState(0);
 
+  const [currentEnemyPath, setCurrentEnemyPath] = useState<Point[] | null>(null);
+
+  useEffect(() => {
+    setCurrentEnemyPath(findPath());
+  }, [grid]);
+
   const generatePaths = (startIdx: number, endIdx: number) => {
     const start = { x: startIdx % cols, y: Math.floor(startIdx / cols) };
     const end = { x: endIdx % cols, y: Math.floor(endIdx / cols) };
 
-    const findSinglePath = (neighborOrder: number[]) => {
-      const queue: { pos: Point, path: Point[] }[] = [{ pos: start, path: [start] }];
-      const visited = new Set<string>();
-      visited.add(`${start.x},${start.y}`);
-
-      while (queue.length > 0) {
-        const { pos, path } = queue.shift()!;
-        if (pos.x === end.x && pos.y === end.y) return path;
-
-        const allNeighbors = [
-          { x: pos.x + 1, y: pos.y },
-          { x: pos.x - 1, y: pos.y },
-          { x: pos.x, y: pos.y + 1 },
-          { x: pos.x, y: pos.y - 1 },
-        ];
-        
-        const neighbors = neighborOrder.map(i => allNeighbors[i]);
-
-        for (const n of neighbors) {
-          if (n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && !visited.has(`${n.x},${n.y}`)) {
-            visited.add(`${n.x},${n.y}`);
-            queue.push({ pos: n, path: [...path, n] });
-          }
-        }
-      }
-      return null;
-    };
-
-    const orders = [
-      [0, 2, 1, 3], // Right, Down, Left, Up
-      [2, 0, 3, 1], // Down, Right, Up, Left
-      [1, 3, 0, 2], // Left, Up, Right, Down
-      [3, 1, 2, 0], // Up, Left, Down, Right
-    ];
-
     const paths: Point[][] = [];
-    const pathStrings = new Set<string>();
+    const xDir = end.x >= start.x ? 1 : -1;
+    const yDir = end.y >= start.y ? 1 : -1;
 
-    for (const order of orders) {
-      const p = findSinglePath(order);
-      if (p) {
-        const s = JSON.stringify(p);
-        if (!pathStrings.has(s)) {
-          paths.push(p);
-          pathStrings.add(s);
-        }
-      }
+    // Path 1: Horizontal then Vertical
+    const p1: Point[] = [];
+    for (let x = start.x; x !== end.x + xDir; x += xDir) {
+      p1.push({ x, y: start.y });
     }
+    for (let y = start.y + yDir; y !== end.y + yDir; y += yDir) {
+      p1.push({ x: end.x, y });
+    }
+    paths.push(p1);
+
+    // Path 2: Vertical then Horizontal
+    if (start.x !== end.x && start.y !== end.y) {
+      const p2: Point[] = [];
+      for (let y = start.y; y !== end.y + yDir; y += yDir) {
+        p2.push({ x: start.x, y });
+      }
+      for (let x = start.x + xDir; x !== end.x + xDir; x += xDir) {
+        p2.push({ x, y: end.y });
+      }
+      paths.push(p2);
+    }
+
     return paths;
   };
 
@@ -1916,31 +1900,57 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
         <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col md:flex-row gap-8">
           {/* Editor Grid */}
           <div className="flex-1 flex flex-col gap-4">
-            <div 
-              className="grid gap-px bg-white/5 border border-white/10 rounded-xl overflow-hidden self-start"
-              style={{ 
-                gridTemplateColumns: `repeat(${cols}, 1fr)`,
-                width: 'fit-content'
-              }}
-            >
-              {grid.map((cell, i) => (
-                <button
-                  key={i}
-                  onClick={() => toggleCell(i)}
-                  className={`w-6 h-6 md:w-8 md:h-8 transition-colors relative ${
-                    cell === 1 ? 'bg-white/20' : 
-                    cell === 2 ? 'bg-emerald-500/50' : 
-                    cell === 3 ? 'bg-rose-500/50' : 
-                    'bg-black/40 hover:bg-white/5'
-                  } ${connectionStart === i ? 'ring-2 ring-cyan-500 ring-inset' : ''}`}
+            <div className="relative self-start">
+              <div 
+                className="grid gap-px bg-white/5 border border-white/10 rounded-xl overflow-hidden"
+                style={{ 
+                  gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                  width: 'fit-content'
+                }}
+              >
+                {grid.map((cell, i) => (
+                  <button
+                    key={i}
+                    onClick={() => toggleCell(i)}
+                    className={`w-6 h-6 md:w-8 md:h-8 transition-colors relative ${
+                      cell === 1 ? 'bg-white/20' : 
+                      cell === 2 ? 'bg-emerald-500/50' : 
+                      cell === 3 ? 'bg-rose-500/50' : 
+                      'bg-black/40 hover:bg-white/5'
+                    } ${connectionStart === i ? 'ring-2 ring-cyan-500 ring-inset' : ''}`}
+                  >
+                    {connectionStart === i && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-1 h-1 bg-cyan-500 rounded-full animate-ping" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              
+              {currentEnemyPath && (
+                <svg 
+                  className="absolute inset-0 pointer-events-none" 
+                  viewBox={`0 0 ${cols} ${rows}`}
+                  preserveAspectRatio="none"
                 >
-                  {connectionStart === i && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-1 h-1 bg-cyan-500 rounded-full animate-ping" />
-                    </div>
-                  )}
-                </button>
-              ))}
+                  <polyline
+                    points={currentEnemyPath.map(p => `${p.x + 0.5},${p.y + 0.5}`).join(' ')}
+                    fill="none"
+                    stroke="rgba(6, 182, 212, 0.6)"
+                    strokeWidth="0.15"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="0.2 0.2"
+                    className="animate-[dash_2s_linear_infinite]"
+                  />
+                  <style>{`
+                    @keyframes dash {
+                      to { stroke-dashoffset: -0.4; }
+                    }
+                  `}</style>
+                </svg>
+              )}
             </div>
             <div className="flex flex-wrap gap-3 items-center">
               {[
