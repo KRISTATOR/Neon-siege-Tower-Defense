@@ -113,7 +113,7 @@ enum GameMode {
 interface MapConfig {
   id: string;
   name: string;
-  path: Point[];
+  paths: Point[][];
   cols: number;
   rows: number;
 }
@@ -131,14 +131,14 @@ const DEFAULT_MAP: MapConfig = {
   name: 'Classic Grid',
   cols: 20,
   rows: 12,
-  path: [
+  paths: [[
     { x: 0, y: 2 },
     { x: 16, y: 2 },
     { x: 16, y: 5 },
     { x: 3, y: 5 },
     { x: 3, y: 9 },
     { x: 19, y: 9 },
-  ]
+  ]]
 };
 
 const CAMPAIGN_SECTORS: Sector[] = [
@@ -152,7 +152,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Training Grounds',
       cols: 12,
       rows: 8,
-      path: [{ x: 0, y: 4 }, { x: 11, y: 4 }]
+      paths: [[{ x: 0, y: 4 }, { x: 11, y: 4 }]]
     }
   },
   { 
@@ -165,7 +165,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Neon Outskirts',
       cols: 15,
       rows: 10,
-      path: [{ x: 0, y: 5 }, { x: 14, y: 5 }]
+      paths: [[{ x: 0, y: 5 }, { x: 14, y: 5 }]]
     }
   },
   { 
@@ -178,7 +178,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Data Hub Alpha',
       cols: 15,
       rows: 10,
-      path: [{ x: 2, y: 0 }, { x: 2, y: 8 }, { x: 12, y: 8 }, { x: 12, y: 2 }]
+      paths: [[{ x: 2, y: 0 }, { x: 2, y: 8 }, { x: 12, y: 8 }, { x: 12, y: 2 }]]
     }
   },
   { 
@@ -191,7 +191,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Grid Sector 7',
       cols: 18,
       rows: 12,
-      path: [{ x: 0, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 2, y: 10 }, { x: 2, y: 6 }, { x: 17, y: 6 }]
+      paths: [[{ x: 0, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 2, y: 10 }, { x: 2, y: 6 }, { x: 17, y: 6 }]]
     }
   },
   { 
@@ -204,7 +204,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Silicon Valley',
       cols: 20,
       rows: 12,
-      path: [{ x: 10, y: 0 }, { x: 10, y: 11 }, { x: 2, y: 11 }, { x: 2, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 9 }, { x: 5, y: 9 }]
+      paths: [[{ x: 10, y: 0 }, { x: 10, y: 11 }, { x: 2, y: 11 }, { x: 2, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 9 }, { x: 5, y: 9 }]]
     }
   },
   { 
@@ -217,7 +217,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'The Firewall',
       cols: 25,
       rows: 8,
-      path: [{ x: 0, y: 4 }, { x: 24, y: 4 }]
+      paths: [[{ x: 0, y: 4 }, { x: 24, y: 4 }]]
     }
   },
   { 
@@ -230,7 +230,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Cyber Port',
       cols: 20,
       rows: 15,
-      path: [{ x: 0, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 13 }, { x: 2, y: 13 }, { x: 2, y: 7 }, { x: 19, y: 7 }]
+      paths: [[{ x: 0, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 13 }, { x: 2, y: 13 }, { x: 2, y: 7 }, { x: 19, y: 7 }]]
     }
   },
   { 
@@ -243,7 +243,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Neural Link',
       cols: 22,
       rows: 14,
-      path: [{ x: 0, y: 0 }, { x: 21, y: 13 }]
+      paths: [[{ x: 0, y: 0 }, { x: 21, y: 13 }]]
     }
   },
   { 
@@ -256,7 +256,7 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'The Void Gate',
       cols: 20,
       rows: 12,
-      path: [{ x: 0, y: 6 }, { x: 5, y: 6 }, { x: 5, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 5 }, { x: 19, y: 5 }]
+      paths: [[{ x: 0, y: 6 }, { x: 5, y: 6 }, { x: 5, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 5 }, { x: 19, y: 5 }]]
     }
   },
   { 
@@ -269,26 +269,80 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Mainframe Core',
       cols: 24,
       rows: 16,
-      path: [{ x: 12, y: 0 }, { x: 12, y: 15 }, { x: 0, y: 15 }, { x: 0, y: 0 }, { x: 23, y: 0 }, { x: 23, y: 15 }]
+      paths: [[{ x: 12, y: 0 }, { x: 12, y: 15 }, { x: 0, y: 15 }, { x: 0, y: 0 }, { x: 23, y: 0 }, { x: 23, y: 15 }]]
     }
   },
   { 
     id: 10, 
     name: "Singularity", 
     wavesToWin: 50, 
-    description: "The final stand against the ultimate virus.", 
+    description: "The final stand against the ultimate virus. Enemies approach from all directions.", 
     mapConfig: {
       id: 'sector-10',
       name: 'Singularity',
       cols: 26,
       rows: 18,
-      path: [
-        { x: 0, y: 2 }, { x: 24, y: 2 }, { x: 24, y: 16 }, { x: 2, y: 16 }, 
-        { x: 2, y: 5 }, { x: 21, y: 5 }, { x: 21, y: 13 }, { x: 5, y: 13 }, 
-        { x: 5, y: 8 }, { x: 18, y: 8 }, { x: 18, y: 10 }, { x: 25, y: 10 }
+      paths: [
+        // North entrance
+        [{ x: 13, y: 0 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
+        // South entrance
+        [{ x: 13, y: 17 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
+        // West entrance
+        [{ x: 0, y: 9 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
+        // East entrance (alternative)
+        [{ x: 0, y: 2 }, { x: 24, y: 2 }, { x: 24, y: 16 }, { x: 2, y: 16 }, { x: 2, y: 9 }, { x: 25, y: 9 }]
       ]
     }
   },
+  {
+    id: 11,
+    name: "The Crossroads",
+    wavesToWin: 20,
+    description: "Two paths intersect at a critical junction.",
+    mapConfig: {
+      id: 'sector-11',
+      name: 'The Crossroads',
+      cols: 20,
+      rows: 12,
+      paths: [
+        [{ x: 0, y: 6 }, { x: 19, y: 6 }],
+        [{ x: 10, y: 0 }, { x: 10, y: 11 }]
+      ]
+    }
+  },
+  {
+    id: 12,
+    name: "Triple Threat",
+    wavesToWin: 25,
+    description: "Three separate data streams converge on the core.",
+    mapConfig: {
+      id: 'sector-12',
+      name: 'Triple Threat',
+      cols: 22,
+      rows: 14,
+      paths: [
+        [{ x: 0, y: 2 }, { x: 11, y: 2 }, { x: 11, y: 13 }],
+        [{ x: 0, y: 11 }, { x: 11, y: 11 }, { x: 11, y: 13 }],
+        [{ x: 21, y: 6 }, { x: 11, y: 6 }, { x: 11, y: 13 }]
+      ]
+    }
+  },
+  {
+    id: 13,
+    name: "The Gauntlet",
+    wavesToWin: 30,
+    description: "Two parallel paths test your ability to manage multiple fronts.",
+    mapConfig: {
+      id: 'sector-13',
+      name: 'The Gauntlet',
+      cols: 24,
+      rows: 16,
+      paths: [
+        [{ x: 0, y: 4 }, { x: 23, y: 4 }],
+        [{ x: 0, y: 11 }, { x: 23, y: 11 }]
+      ]
+    }
+  }
 ];
 
 const getTurretDepth = (type: TurretType): number => {
@@ -1673,7 +1727,7 @@ export default function App() {
   const CANVAS_HEIGHT = currentMapConfig.rows * GRID_SIZE;
   const COLS = currentMapConfig.cols;
   const ROWS = currentMapConfig.rows;
-  const PATH_POINTS = currentMapConfig.path;
+  const PATHS = currentMapConfig.paths;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -2146,7 +2200,8 @@ export default function App() {
           }
         }
         
-        const newEnemy = new Enemy(hp, speed, type, PATH_POINTS);
+        const randomPath = PATHS[Math.floor(Math.random() * PATHS.length)];
+        const newEnemy = new Enemy(hp, speed, type, randomPath);
         enemiesRef.current.push(newEnemy);
         enemiesToSpawnRef.current--;
         waveSpawnTimerRef.current = 0;
@@ -2254,7 +2309,7 @@ export default function App() {
         }
       }
     }
-  }, [isWaveActive, encounteredEnemies, user, PATH_POINTS]);
+  }, [isWaveActive, encounteredEnemies, user, PATHS]);
 
   // Auto-Start Effect for reliability
   useEffect(() => {
@@ -2309,59 +2364,61 @@ export default function App() {
       ctx.stroke();
     }
 
-    // Draw Path
-    ctx.strokeStyle = pathColor;
-    ctx.lineWidth = GRID_SIZE;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    PATH_POINTS.forEach((p, i) => {
-      if (i === 0) ctx.moveTo(p.x * GRID_SIZE + GRID_SIZE/2, p.y * GRID_SIZE + GRID_SIZE/2);
-      else ctx.lineTo(p.x * GRID_SIZE + GRID_SIZE/2, p.y * GRID_SIZE + GRID_SIZE/2);
-    });
-    ctx.stroke();
-    
-    // Path Glow
-    ctx.strokeStyle = glowColor;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Enemy Spawn Indicators
-    const start = PATH_POINTS[0];
-    const next = PATH_POINTS[1];
-    if (start && next) {
-      const sx = start.x * GRID_SIZE + GRID_SIZE / 2;
-      const sy = start.y * GRID_SIZE + GRID_SIZE / 2;
-      const nx = next.x * GRID_SIZE + GRID_SIZE / 2;
-      const ny = next.y * GRID_SIZE + GRID_SIZE / 2;
-      
-      const angle = Math.atan2(ny - sy, nx - sx);
-      
-      ctx.save();
-      ctx.translate(sx, sy);
-      ctx.rotate(angle);
-      
-      // Draw Pulse/Arrow
-      ctx.fillStyle = '#ef4444';
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = '#ef4444';
-      
+    // Draw All Paths
+    PATHS.forEach(path => {
+      ctx.strokeStyle = pathColor;
+      ctx.lineWidth = GRID_SIZE;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.moveTo(10, 0);
-      ctx.lineTo(-10, -10);
-      ctx.lineTo(-10, 10);
-      ctx.closePath();
-      ctx.fill();
+      path.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x * GRID_SIZE + GRID_SIZE/2, p.y * GRID_SIZE + GRID_SIZE/2);
+        else ctx.lineTo(p.x * GRID_SIZE + GRID_SIZE/2, p.y * GRID_SIZE + GRID_SIZE/2);
+      });
+      ctx.stroke();
       
-      // Text Label
-      ctx.rotate(-angle);
-      ctx.fillStyle = '#ef4444';
-      ctx.font = 'bold 10px Montserrat, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('SPAWN', 0, -15);
-      ctx.restore();
-    }
-  }, [CANVAS_WIDTH, CANVAS_HEIGHT, COLS, ROWS, PATH_POINTS, theme]);
+      // Path Glow
+      ctx.strokeStyle = glowColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Enemy Spawn Indicators
+      const start = path[0];
+      const next = path[1];
+      if (start && next) {
+        const sx = start.x * GRID_SIZE + GRID_SIZE / 2;
+        const sy = start.y * GRID_SIZE + GRID_SIZE / 2;
+        const nx = next.x * GRID_SIZE + GRID_SIZE / 2;
+        const ny = next.y * GRID_SIZE + GRID_SIZE / 2;
+        
+        const angle = Math.atan2(ny - sy, nx - sx);
+        
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(angle);
+        
+        // Draw Pulse/Arrow
+        ctx.fillStyle = '#ef4444';
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#ef4444';
+        
+        ctx.beginPath();
+        ctx.moveTo(10, 0);
+        ctx.lineTo(-10, -10);
+        ctx.lineTo(-10, 10);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Text Label
+        ctx.rotate(-angle);
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 10px Montserrat, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('SPAWN', 0, -15);
+        ctx.restore();
+      }
+    });
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT, COLS, ROWS, PATHS, theme]);
 
   const draw = useCallback(() => {
     if (document.hidden) {
@@ -2417,15 +2474,15 @@ export default function App() {
       ctx.restore();
 
       // Validation
-      const isOnPath = PATH_POINTS.some((p, i) => {
-        if (i === PATH_POINTS.length - 1) return false;
-        const next = PATH_POINTS[i + 1];
+      const isOnPath = PATHS.some(path => path.some((p, i) => {
+        if (i === path.length - 1) return false;
+        const next = path[i + 1];
         const minX = Math.min(p.x, next.x);
         const maxX = Math.max(p.x, next.x);
         const minY = Math.min(p.y, next.y);
         const maxY = Math.max(p.y, next.y);
         return currentMouseGrid.x >= minX && currentMouseGrid.x <= maxX && currentMouseGrid.y >= minY && currentMouseGrid.y <= maxY;
-      });
+      }));
       const isOccupied = turretsRef.current.some(t => 
         Math.floor(t.x / GRID_SIZE) === currentMouseGrid.x && Math.floor(t.y / GRID_SIZE) === currentMouseGrid.y
       );
@@ -2461,7 +2518,7 @@ export default function App() {
     }
 
     requestRef.current = requestAnimationFrame(draw);
-  }, [CANVAS_WIDTH, CANVAS_HEIGHT, PATH_POINTS]);
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT, PATHS]);
 
   // Initialize Game
   useEffect(() => {
@@ -2558,15 +2615,15 @@ export default function App() {
     if (!selectedTurretType) return;
 
     // Check if on path
-    const isOnPath = PATH_POINTS.some((p, i) => {
-      if (i === PATH_POINTS.length - 1) return false;
-      const next = PATH_POINTS[i + 1];
+    const isOnPath = PATHS.some(path => path.some((p, i) => {
+      if (i === path.length - 1) return false;
+      const next = path[i + 1];
       const minX = Math.min(p.x, next.x);
       const maxX = Math.max(p.x, next.x);
       const minY = Math.min(p.y, next.y);
       const maxY = Math.max(p.y, next.y);
       return gridX >= minX && gridX <= maxX && gridY >= minY && gridY <= maxY;
-    });
+    }));
 
     // Check if already occupied
     const isOccupied = existingTurretIndex !== -1;
@@ -3550,8 +3607,16 @@ export default function App() {
                         >
                           <div className={`flex justify-between items-start ${isMobile && isLandscape ? 'mb-1' : 'mb-2 md:mb-4'}`}>
                             <h3 className={`font-black uppercase tracking-tight text-white group-hover:text-cyan-400 transition-colors ${isMobile && isLandscape ? 'text-[10px]' : 'text-sm md:text-lg'}`}>{map.name}</h3>
-                            <div className="bg-cyan-500/10 px-1.5 py-0.5 rounded text-[7px] md:text-[8px] font-bold text-cyan-400 uppercase tracking-widest">
-                              {map.cols}x{map.rows}
+                            <div className="flex gap-2">
+                              <div className="bg-cyan-500/10 px-1.5 py-0.5 rounded text-[7px] md:text-[8px] font-bold text-cyan-400 uppercase tracking-widest">
+                                {map.cols}x{map.rows}
+                              </div>
+                              {map.paths.length > 1 && (
+                                <div className="bg-amber-500/10 px-1.5 py-0.5 rounded text-[7px] md:text-[8px] font-bold text-amber-400 uppercase tracking-widest flex items-center gap-1">
+                                  <Activity className="w-2 h-2" />
+                                  {map.paths.length} Entrances
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex-1">
@@ -3560,7 +3625,7 @@ export default function App() {
                               {Array.from({ length: 5 }).map((_, i) => (
                                 <div 
                                   key={i} 
-                                  className={`h-1 rounded-full ${isMobile && isLandscape ? 'w-2' : 'w-3 md:w-4'} ${i < Math.min(5, Math.ceil(map.path.length / 2)) ? 'bg-cyan-500' : 'bg-white/10'}`} 
+                                  className={`h-1 rounded-full ${isMobile && isLandscape ? 'w-2' : 'w-3 md:w-4'} ${i < Math.min(5, Math.ceil(map.paths[0].length / 2)) ? 'bg-cyan-500' : 'bg-white/10'}`} 
                                 />
                               ))}
                             </div>
