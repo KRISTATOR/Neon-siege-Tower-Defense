@@ -101,6 +101,10 @@
     "users/{userId}/endless_sessions/{sessionId}": {
       "schema": "EndlessSession",
       "description": "User-specific active endless game sessions."
+    },
+    "users/{userId}/sandbox_sessions/{sessionId}": {
+      "schema": "EndlessSession",
+      "description": "User-specific active sandbox game sessions."
     }
   }
 }

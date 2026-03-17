@@ -1809,6 +1809,7 @@ export default function App() {
           setUnlockedSectorCount(data.unlockedSectorCount || 1);
           setHighestEndlessWaves(data.highestEndlessWaves || {});
           setEndlessSessions(data.endlessSessions || {});
+          setSandboxSessions(data.sandboxSessions || {});
           setTotalWavesSurvived(data.totalWavesSurvived || 0);
           setTotalSessionsSaved(data.totalSessionsSaved || 0);
           setCommanderExp(data.commanderExp || 0);
@@ -1836,22 +1837,47 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthReady && user) {
-      const path = `users/${user.uid}/endless_sessions`;
-      const q = query(collection(db, path), orderBy('lastUpdated', 'desc'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const sessions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setLibrarySessions(sessions);
+      const endlessPath = `users/${user.uid}/endless_sessions`;
+      const sandboxPath = `users/${user.uid}/sandbox_sessions`;
+      
+      const endlessQ = query(collection(db, endlessPath), orderBy('lastUpdated', 'desc'));
+      const sandboxQ = query(collection(db, sandboxPath), orderBy('lastUpdated', 'desc'));
+      
+      let endlessData: any[] = [];
+      let sandboxData: any[] = [];
+      
+      const updateLibrary = () => {
+        const combined = [...endlessData, ...sandboxData].sort((a, b) => 
+          new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
+        );
+        setLibrarySessions(combined);
+      };
+
+      const unsubscribeEndless = onSnapshot(endlessQ, (snapshot) => {
+        endlessData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'endless' }));
+        updateLibrary();
       }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, path);
+        handleFirestoreError(error, OperationType.LIST, endlessPath);
       });
-      return () => unsubscribe();
+
+      const unsubscribeSandbox = onSnapshot(sandboxQ, (snapshot) => {
+        sandboxData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'sandbox' }));
+        updateLibrary();
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, sandboxPath);
+      });
+
+      return () => {
+        unsubscribeEndless();
+        unsubscribeSandbox();
+      };
     } else if (isAuthReady && !user) {
       setLibrarySessions([]);
     }
   }, [isAuthReady, user]);
 
   const loadSession = (session: any) => {
-    setGameMode(GameMode.ENDLESS);
+    setGameMode(session.type === 'sandbox' ? GameMode.SANDBOX : GameMode.ENDLESS);
     setDifficulty(session.difficulty);
     setWave(session.wave);
     setGold(session.gold);
@@ -1885,6 +1911,8 @@ export default function App() {
 
   // Save progress to Firestore
   const [endlessSessions, setEndlessSessions] = useState<Record<string, any>>({});
+  const [sandboxSessions, setSandboxSessions] = useState<Record<string, any>>({});
+  const [sessionToDelete, setSessionToDelete] = useState<{ id: string, type: 'endless' | 'sandbox' } | null>(null);
 
   const saveProgress = async (
     newSectorCount?: number, 
@@ -1916,29 +1944,41 @@ export default function App() {
         }
       }
 
-      const updatedSessions = { ...endlessSessions };
+      const updatedSessions = gameMode === GameMode.SANDBOX ? { ...sandboxSessions } : { ...endlessSessions };
       if (newEndlessSession && mapId) {
-        updatedSessions[mapId] = newEndlessSession;
-        setEndlessSessions(updatedSessions);
+        if (gameMode === GameMode.SANDBOX) {
+          updatedSessions[mapId] = newEndlessSession;
+          setSandboxSessions(updatedSessions);
+        } else {
+          updatedSessions[mapId] = newEndlessSession;
+          setEndlessSessions(updatedSessions);
+        }
 
-        // Sync to user-specific library if in endless mode
-        if (gameMode === GameMode.ENDLESS) {
-          const libraryPath = `users/${user.uid}/endless_sessions/${mapId}`;
+        // Sync to user-specific library if in endless or sandbox mode
+        if (gameMode === GameMode.ENDLESS || gameMode === GameMode.SANDBOX) {
+          const collectionName = gameMode === GameMode.SANDBOX ? 'sandbox_sessions' : 'endless_sessions';
+          const libraryPath = `users/${user.uid}/${collectionName}/${mapId}`;
           await setDoc(doc(db, libraryPath), {
             ...newEndlessSession,
             userId: user.uid,
             userName: user.displayName || 'Anonymous',
             commanderLevel: getCommanderLevel(commanderExp),
             mapId: mapId,
+            mode: gameMode,
             lastUpdated: new Date().toISOString()
           });
         }
       } else if (newEndlessSession === null && mapId) {
         delete updatedSessions[mapId];
-        setEndlessSessions(updatedSessions);
+        if (gameMode === GameMode.SANDBOX) {
+          setSandboxSessions(updatedSessions);
+        } else {
+          setEndlessSessions(updatedSessions);
+        }
 
         // Remove from user-specific library
-        const libraryPath = `users/${user.uid}/endless_sessions/${mapId}`;
+        const collectionName = gameMode === GameMode.SANDBOX ? 'sandbox_sessions' : 'endless_sessions';
+        const libraryPath = `users/${user.uid}/${collectionName}/${mapId}`;
         await deleteDoc(doc(db, libraryPath));
       }
 
@@ -1980,7 +2020,8 @@ export default function App() {
       await setDoc(progressDoc, {
         unlockedSectorCount: newSectorCount ?? unlockedSectorCount,
         highestEndlessWaves: updatedWaves,
-        endlessSessions: updatedSessions,
+        endlessSessions: gameMode === GameMode.SANDBOX ? endlessSessions : updatedSessions,
+        sandboxSessions: gameMode === GameMode.SANDBOX ? updatedSessions : sandboxSessions,
         encounteredEnemies: newEncountered ?? Array.from(encounteredEnemies),
         unlockedTurrets: newUnlockedTurrets ?? Array.from(unlockedTurrets),
         unlockedUpgrades: newUnlockedUpgrades ?? Array.from(unlockedUpgrades),
@@ -1992,6 +2033,41 @@ export default function App() {
       }, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const deleteSession = async (mapId: string, type: 'endless' | 'sandbox') => {
+    if (!user) return;
+    setIsSyncing(true);
+    const path = `users/${user.uid}/progress/current`;
+    try {
+      const progressDoc = doc(db, path);
+      const updatedSessions = type === 'sandbox' ? { ...sandboxSessions } : { ...endlessSessions };
+      delete updatedSessions[mapId];
+      
+      if (type === 'sandbox') {
+        setSandboxSessions(updatedSessions);
+      } else {
+        setEndlessSessions(updatedSessions);
+      }
+
+      // Remove from user-specific library
+      const collectionName = type === 'sandbox' ? 'sandbox_sessions' : 'endless_sessions';
+      const libraryPath = `users/${user.uid}/${collectionName}/${mapId}`;
+      await deleteDoc(doc(db, libraryPath));
+
+      await setDoc(progressDoc, {
+        endlessSessions: type === 'sandbox' ? endlessSessions : updatedSessions,
+        sandboxSessions: type === 'sandbox' ? updatedSessions : sandboxSessions,
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+      
+      setSessionToDelete(null);
+      SoundManager.playDelete();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
     } finally {
       setIsSyncing(false);
     }
@@ -2341,7 +2417,7 @@ export default function App() {
           // Save progress on wave completion in campaign too
           if (user) saveProgress(undefined, wave, undefined, undefined, undefined, undefined, undefined, undefined, undefined, goldRef.current, livesRef.current);
         }
-      } else if (gameMode === GameMode.ENDLESS) {
+      } else if (gameMode === GameMode.ENDLESS || gameMode === GameMode.SANDBOX) {
         if (user) {
           const session = {
             wave: wave,
@@ -2833,6 +2909,38 @@ export default function App() {
     if (map) setCurrentMapConfig(map);
     
     setGameMode(GameMode.ENDLESS);
+    setShowMapSelect(false);
+    setShowDifficultySelect(false);
+    SoundManager.playBuy();
+    if (user && map) {
+      saveProgress(undefined, undefined, undefined, undefined, undefined, null, map.id, undefined, undefined, goldRef.current, livesRef.current);
+    }
+  };
+
+  const resumeSandboxSession = (mapId: string) => {
+    const session = sandboxSessions[mapId];
+    if (!session) return;
+    
+    setDifficulty(session.difficulty);
+    setGold(session.gold);
+    setLives(session.lives);
+    setWave(session.wave);
+    setInventory(session.inventory);
+    setUnlockedTurrets(new Set(session.unlockedTurrets));
+    setUnlockedUpgrades(new Set(session.unlockedUpgrades));
+    
+    const newTurrets = session.turrets.map((t: any) => {
+      const turret = new Turret(t.gridX, t.gridY, t.type);
+      turret.level = t.level;
+      return turret;
+    });
+    turretsRef.current = newTurrets;
+    enemiesRef.current = [];
+    
+    const map = [DEFAULT_MAP, ...CAMPAIGN_SECTORS.map(s => s.mapConfig)].find(m => m.id === mapId);
+    if (map) setCurrentMapConfig(map);
+    
+    setGameMode(GameMode.SANDBOX);
     setShowMapSelect(false);
     setShowDifficultySelect(false);
     SoundManager.playBuy();
@@ -3687,17 +3795,29 @@ export default function App() {
                             </div>
                           </div>
                           <div className={`border-t border-white/5 flex justify-between items-center ${isMobile && isLandscape ? 'mt-1 pt-1' : 'mt-2 md:mt-4 pt-2 md:pt-4'}`}>
-                            {endlessSessions[map.id] ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  resumeEndlessSession(map.id);
-                                }}
-                                className="flex items-center gap-1 text-cyan-400 font-black uppercase tracking-widest text-[8px] md:text-[10px] hover:text-white transition-colors"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                Resume (W{endlessSessions[map.id].wave})
-                              </button>
+                            {(isSandboxEntry ? sandboxSessions[map.id] : endlessSessions[map.id]) ? (
+                              <div className="flex items-center gap-3">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isSandboxEntry) resumeSandboxSession(map.id);
+                                    else resumeEndlessSession(map.id);
+                                  }}
+                                  className="flex items-center gap-1 text-cyan-400 font-black uppercase tracking-widest text-[8px] md:text-[10px] hover:text-white transition-colors"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  Resume (W{(isSandboxEntry ? sandboxSessions[map.id] : endlessSessions[map.id]).wave})
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSessionToDelete({ id: map.id, type: isSandboxEntry ? 'sandbox' : 'endless' });
+                                  }}
+                                  className="p-1 text-white/20 hover:text-red-500 transition-colors"
+                                >
+                                  <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
+                                </button>
+                              </div>
                             ) : (
                               <span className="text-[7px] md:text-[9px] text-white/20 uppercase tracking-widest font-bold">Max Wave</span>
                             )}
@@ -4110,15 +4230,69 @@ export default function App() {
                                 </div>
                               </div>
                               
-                              <div className="mt-6 flex items-center justify-end gap-2 text-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Resume Protocol</span>
-                                <ChevronRight className="w-4 h-4" />
+                              <div className="mt-6 flex items-center justify-between">
+                                <div className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border ${session.type === 'sandbox' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'}`}>
+                                  {session.type === 'sandbox' ? 'Sandbox' : 'Endless'}
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSessionToDelete({ id: session.mapId, type: session.type });
+                                    }}
+                                    className="p-2 text-white/20 hover:text-red-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                  <div className="flex items-center gap-2 text-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest">Resume Protocol</span>
+                                    <ChevronRight className="w-4 h-4" />
+                                  </div>
+                                </div>
                               </div>
                             </button>
                           );
                         })}
                       </div>
                     )}
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Delete Confirmation Modal */}
+          <AnimatePresence>
+            {sessionToDelete && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+              >
+                <motion.div
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  className="w-full max-w-sm bg-[#0a0a0a] border border-red-500/30 rounded-3xl p-8 text-center"
+                >
+                  <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+                    <Trash2 className="w-8 h-8 text-red-500" />
+                  </div>
+                  <h3 className="text-xl font-black uppercase italic tracking-tight text-white mb-2">Delete Session?</h3>
+                  <p className="text-white/40 text-sm mb-8">This action is irreversible. The saved progress for this sector will be purged from the library.</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSessionToDelete(null)}
+                      className="flex-1 px-6 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-white/60 font-bold uppercase tracking-widest text-xs transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => deleteSession(sessionToDelete.id, sessionToDelete.type)}
+                      className="flex-1 px-6 py-3 bg-red-500 hover:bg-red-600 rounded-xl text-white font-bold uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </motion.div>
               </motion.div>

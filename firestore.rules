@@ -63,5 +63,11 @@ service cloud.firestore {
       allow write: if isOwner(userId) && isValidEndlessSession(request.resource.data);
       allow delete: if isOwner(userId);
     }
+
+    match /users/{userId}/sandbox_sessions/{sessionId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidEndlessSession(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
   }
 }
