@@ -1698,9 +1698,116 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
   const [selectedTool, setSelectedTool] = useState<number>(1);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStart, setConnectionStart] = useState<number | null>(null);
+  const [possiblePaths, setPossiblePaths] = useState<Point[][]>([]);
+  const [currentPathIndex, setCurrentPathIndex] = useState(0);
+
+  const generatePaths = (startIdx: number, endIdx: number) => {
+    const start = { x: startIdx % cols, y: Math.floor(startIdx / cols) };
+    const end = { x: endIdx % cols, y: Math.floor(endIdx / cols) };
+
+    const findSinglePath = (neighborOrder: number[]) => {
+      const queue: { pos: Point, path: Point[] }[] = [{ pos: start, path: [start] }];
+      const visited = new Set<string>();
+      visited.add(`${start.x},${start.y}`);
+
+      while (queue.length > 0) {
+        const { pos, path } = queue.shift()!;
+        if (pos.x === end.x && pos.y === end.y) return path;
+
+        const allNeighbors = [
+          { x: pos.x + 1, y: pos.y },
+          { x: pos.x - 1, y: pos.y },
+          { x: pos.x, y: pos.y + 1 },
+          { x: pos.x, y: pos.y - 1 },
+        ];
+        
+        const neighbors = neighborOrder.map(i => allNeighbors[i]);
+
+        for (const n of neighbors) {
+          if (n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && !visited.has(`${n.x},${n.y}`)) {
+            visited.add(`${n.x},${n.y}`);
+            queue.push({ pos: n, path: [...path, n] });
+          }
+        }
+      }
+      return null;
+    };
+
+    const orders = [
+      [0, 2, 1, 3], // Right, Down, Left, Up
+      [2, 0, 3, 1], // Down, Right, Up, Left
+      [1, 3, 0, 2], // Left, Up, Right, Down
+      [3, 1, 2, 0], // Up, Left, Down, Right
+    ];
+
+    const paths: Point[][] = [];
+    const pathStrings = new Set<string>();
+
+    for (const order of orders) {
+      const p = findSinglePath(order);
+      if (p) {
+        const s = JSON.stringify(p);
+        if (!pathStrings.has(s)) {
+          paths.push(p);
+          pathStrings.add(s);
+        }
+      }
+    }
+    return paths;
+  };
+
+  const applyPathToGrid = (path: Point[], targetGrid: number[]) => {
+    // Clear existing paths (1) but keep spawn (2) and goal (3)
+    for (let i = 0; i < targetGrid.length; i++) {
+      if (targetGrid[i] === 1) targetGrid[i] = 0;
+    }
+    // Apply new path
+    path.forEach(p => {
+      const idx = p.y * cols + p.x;
+      if (targetGrid[idx] === 0) targetGrid[idx] = 1;
+    });
+  };
 
   const toggleCell = (index: number) => {
     const newGrid = [...grid];
+    setError(null);
+
+    // Auto-pathing logic
+    if (selectedTool === 1) {
+      const cellType = grid[index];
+      if (cellType === 2 || cellType === 3) {
+        if (connectionStart === null) {
+          setConnectionStart(index);
+          return;
+        } else {
+          const startType = grid[connectionStart];
+          if (startType !== cellType) {
+            const paths = generatePaths(connectionStart, index);
+            if (paths.length > 0) {
+              setPossiblePaths(paths);
+              setCurrentPathIndex(0);
+              applyPathToGrid(paths[0], newGrid);
+              setGrid(newGrid);
+              setConnectionStart(null);
+              return;
+            } else {
+              setError('No path possible between these points.');
+              setConnectionStart(null);
+              return;
+            }
+          } else {
+            // Clicked same type, reset or change start
+            setConnectionStart(index);
+            return;
+          }
+        }
+      }
+    }
+
+    setConnectionStart(null);
+    setPossiblePaths([]);
+
     if (newGrid[index] === selectedTool) {
       newGrid[index] = 0;
     } else {
@@ -1820,16 +1927,22 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
                 <button
                   key={i}
                   onClick={() => toggleCell(i)}
-                  className={`w-6 h-6 md:w-8 md:h-8 transition-colors ${
+                  className={`w-6 h-6 md:w-8 md:h-8 transition-colors relative ${
                     cell === 1 ? 'bg-white/20' : 
                     cell === 2 ? 'bg-emerald-500/50' : 
                     cell === 3 ? 'bg-rose-500/50' : 
                     'bg-black/40 hover:bg-white/5'
-                  }`}
-                />
+                  } ${connectionStart === i ? 'ring-2 ring-cyan-500 ring-inset' : ''}`}
+                >
+                  {connectionStart === i && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-1 h-1 bg-cyan-500 rounded-full animate-ping" />
+                    </div>
+                  )}
+                </button>
               ))}
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 items-center">
               {[
                 { id: 1, name: 'Path', icon: <Activity className="w-4 h-4" />, color: 'bg-white/20' },
                 { id: 2, name: 'Spawn', icon: <Play className="w-4 h-4" />, color: 'bg-emerald-500/50' },
@@ -1837,7 +1950,10 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
               ].map(tool => (
                 <button
                   key={tool.id}
-                  onClick={() => setSelectedTool(tool.id)}
+                  onClick={() => {
+                    setSelectedTool(tool.id);
+                    setConnectionStart(null);
+                  }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all uppercase tracking-widest font-bold text-[10px] ${
                     selectedTool === tool.id ? 'bg-white/10 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-white/40'
                   }`}
@@ -1846,7 +1962,28 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
                   {tool.name}
                 </button>
               ))}
+
+              {possiblePaths.length > 1 && (
+                <button
+                  onClick={() => {
+                    const nextIdx = (currentPathIndex + 1) % possiblePaths.length;
+                    setCurrentPathIndex(nextIdx);
+                    const newGrid = [...grid];
+                    applyPathToGrid(possiblePaths[nextIdx], newGrid);
+                    setGrid(newGrid);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 transition-all uppercase tracking-widest font-bold text-[10px]"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Cycle Path ({currentPathIndex + 1}/{possiblePaths.length})
+                </button>
+              )}
             </div>
+            {selectedTool === 1 && (
+              <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold">
+                Tip: Click Spawn then Goal to auto-connect, or paint manually.
+              </p>
+            )}
           </div>
 
           {/* Metadata Form */}
