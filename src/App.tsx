@@ -3377,11 +3377,11 @@ export default function App() {
         >
           {/* Start Screen Overlay */}
           {gameMode === GameMode.START && (
-            <div className={`absolute inset-0 z-50 bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-center overflow-y-auto ${isMobile && isLandscape ? 'p-2' : 'p-4 md:p-8'}`}>
+            <div className={`absolute inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-start overflow-y-auto custom-scrollbar ${isMobile && isLandscape ? 'p-2 pt-8' : 'p-4 md:p-8 pt-12 md:pt-24'} pb-20`}>
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className={`w-full text-center ${isMobile && isLandscape ? 'py-4 max-w-2xl' : 'py-10 max-w-4xl'}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`w-full text-center ${isMobile && isLandscape ? 'max-w-2xl' : 'max-w-4xl'}`}
               >
                 <div className={`flex flex-col items-center ${isMobile && isLandscape ? 'gap-2 mb-4' : 'gap-4 md:gap-6 mb-8 md:mb-12'}`}>
                   <div className={`absolute flex items-center ${isMobile && isLandscape ? 'top-2 right-2 gap-2' : 'top-4 right-4 md:top-8 md:right-8 gap-2 md:gap-4'}`}>
@@ -4141,16 +4141,24 @@ export default function App() {
             />
             
             {/* CRT Distortion & Scanlines Overlay */}
-            <div className="absolute inset-0 pointer-events-none z-50">
-              {/* Scanlines */}
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] opacity-20" />
+            <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden rounded-sm">
+              {/* Scanlines - Simplified for better compatibility */}
+              <div 
+                className="absolute inset-0 opacity-[0.15]" 
+                style={{
+                  backgroundImage: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%)',
+                  backgroundSize: '100% 4px'
+                }}
+              />
+              {/* Static/Noise subtle overlay */}
+              <div className="absolute inset-0 opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] brightness-100 contrast-150" />
               {/* Vignette */}
-              <div className="absolute inset-0 shadow-[inset_0_0_120px_rgba(0,0,0,0.6)]" />
+              <div className="absolute inset-0 shadow-[inset_0_0_120px_rgba(0,0,0,0.7)]" />
               {/* Screen Glare */}
               <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent opacity-10" />
-              {/* Chromatic Aberration Simulation (Subtle) */}
-              <div className="absolute inset-0 border-[1px] border-cyan-500/10 mix-blend-screen" />
-              <div className="absolute inset-0 border-[1px] border-red-500/10 -translate-x-[1px] mix-blend-screen" />
+              {/* Chromatic Aberration Simulation */}
+              <div className="absolute inset-0 border-l border-cyan-500/10 mix-blend-screen" />
+              <div className="absolute inset-0 border-r border-red-500/10 mix-blend-screen" />
             </div>
             
             {/* Placement Preview */}
