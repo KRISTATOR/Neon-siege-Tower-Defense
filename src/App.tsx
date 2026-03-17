@@ -1729,6 +1729,27 @@ export default function App() {
   const ROWS = currentMapConfig.rows;
   const PATHS = currentMapConfig.paths;
 
+  const [gameScale, setGameScale] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const scaleX = width / CANVAS_WIDTH;
+        const scaleY = height / CANVAS_HEIGHT;
+        const newScale = Math.min(scaleX, scaleY, 1); // Don't scale up past 1:1 if possible, but fit if smaller
+        setGameScale(newScale);
+      }
+    });
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
@@ -3348,7 +3369,10 @@ export default function App() {
   )}
 
         {/* Game Area */}
-        <section className={`flex-1 relative ${theme === 'dark' ? 'bg-[radial-gradient(circle_at_center,_#111_0%,_#000_100%)]' : 'bg-[radial-gradient(circle_at_center,_#f1f5f9_0%,_#e2e8f0_100%)]'} flex items-center justify-center overflow-auto custom-scrollbar ${isMobile && isLandscape ? 'p-1' : 'p-4'}`}>
+        <section 
+          ref={containerRef}
+          className={`flex-1 relative ${theme === 'dark' ? 'bg-[radial-gradient(circle_at_center,_#111_0%,_#000_100%)]' : 'bg-[radial-gradient(circle_at_center,_#f1f5f9_0%,_#e2e8f0_100%)]'} flex items-center justify-center overflow-hidden ${isMobile && isLandscape ? 'p-1' : 'p-4'}`}
+        >
           {/* Start Screen Overlay */}
           {gameMode === GameMode.START && (
             <div className={`absolute inset-0 z-50 bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-center overflow-y-auto ${isMobile && isLandscape ? 'p-2' : 'p-4 md:p-8'}`}>
@@ -4093,13 +4117,13 @@ export default function App() {
           )}
 
           <div 
-            className="relative shadow-[0_0_100px_rgba(0,0,0,0.5)] border border-white/5 rounded-sm overflow-hidden shrink-0"
+            className="relative shadow-[0_0_100px_rgba(0,0,0,0.5)] border border-white/5 rounded-sm overflow-hidden shrink-0 transition-transform duration-300 ease-out"
             style={{ 
-              width: isMobile ? 'auto' : CANVAS_WIDTH, 
-              height: isMobile ? 'auto' : CANVAS_HEIGHT,
-              maxWidth: '100%',
-              maxHeight: '100%',
-              aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`
+              width: CANVAS_WIDTH, 
+              height: CANVAS_HEIGHT,
+              transform: `scale(${gameScale})`,
+              transformOrigin: 'center center',
+              filter: 'contrast(1.1) brightness(1.1) saturate(1.1)'
             }}
           >
             <canvas
@@ -4109,7 +4133,23 @@ export default function App() {
               onMouseLeave={() => { mousePosRef.current = null; }}
               onClick={handleCanvasClick}
               className={`block w-full h-full ${selectedTurretType ? 'cursor-crosshair' : isRetractMode ? 'cursor-pointer' : 'cursor-default'}`}
+              style={{
+                imageRendering: 'pixelated'
+              }}
             />
+            
+            {/* CRT Distortion & Scanlines Overlay */}
+            <div className="absolute inset-0 pointer-events-none z-50">
+              {/* Scanlines */}
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] opacity-20" />
+              {/* Vignette */}
+              <div className="absolute inset-0 shadow-[inset_0_0_120px_rgba(0,0,0,0.6)]" />
+              {/* Screen Glare */}
+              <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent opacity-10" />
+              {/* Chromatic Aberration Simulation (Subtle) */}
+              <div className="absolute inset-0 border-[1px] border-cyan-500/10 mix-blend-screen" />
+              <div className="absolute inset-0 border-[1px] border-red-500/10 -translate-x-[1px] mix-blend-screen" />
+            </div>
             
             {/* Placement Preview */}
             {selectedTurretType && (
