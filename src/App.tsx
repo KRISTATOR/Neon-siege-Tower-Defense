@@ -116,6 +116,7 @@ interface MapConfig {
   paths: Point[][];
   cols: number;
   rows: number;
+  difficulty?: number;
 }
 
 interface Sector {
@@ -152,7 +153,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Training Grounds',
       cols: 12,
       rows: 8,
-      paths: [[{ x: 0, y: 4 }, { x: 11, y: 4 }]]
+      paths: [[{ x: 0, y: 4 }, { x: 11, y: 4 }]],
+      difficulty: 1
     }
   },
   { 
@@ -165,7 +167,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Neon Outskirts',
       cols: 15,
       rows: 10,
-      paths: [[{ x: 0, y: 5 }, { x: 14, y: 5 }]]
+      paths: [[{ x: 0, y: 5 }, { x: 14, y: 5 }]],
+      difficulty: 1
     }
   },
   { 
@@ -178,7 +181,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Data Hub Alpha',
       cols: 15,
       rows: 10,
-      paths: [[{ x: 2, y: 0 }, { x: 2, y: 8 }, { x: 12, y: 8 }, { x: 12, y: 2 }]]
+      paths: [[{ x: 2, y: 0 }, { x: 2, y: 8 }, { x: 12, y: 8 }, { x: 12, y: 2 }]],
+      difficulty: 2
     }
   },
   { 
@@ -191,7 +195,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Grid Sector 7',
       cols: 18,
       rows: 12,
-      paths: [[{ x: 0, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 2, y: 10 }, { x: 2, y: 6 }, { x: 17, y: 6 }]]
+      paths: [[{ x: 0, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 2, y: 10 }, { x: 2, y: 6 }, { x: 17, y: 6 }]],
+      difficulty: 2
     }
   },
   { 
@@ -204,7 +209,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Silicon Valley',
       cols: 20,
       rows: 12,
-      paths: [[{ x: 10, y: 0 }, { x: 10, y: 11 }, { x: 2, y: 11 }, { x: 2, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 9 }, { x: 5, y: 9 }]]
+      paths: [[{ x: 10, y: 0 }, { x: 10, y: 11 }, { x: 2, y: 11 }, { x: 2, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 9 }, { x: 5, y: 9 }]],
+      difficulty: 3
     }
   },
   { 
@@ -217,7 +223,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'The Firewall',
       cols: 25,
       rows: 8,
-      paths: [[{ x: 0, y: 4 }, { x: 24, y: 4 }]]
+      paths: [[{ x: 0, y: 4 }, { x: 24, y: 4 }]],
+      difficulty: 3
     }
   },
   { 
@@ -230,7 +237,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Cyber Port',
       cols: 20,
       rows: 15,
-      paths: [[{ x: 0, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 13 }, { x: 2, y: 13 }, { x: 2, y: 7 }, { x: 19, y: 7 }]]
+      paths: [[{ x: 0, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 13 }, { x: 2, y: 13 }, { x: 2, y: 7 }, { x: 19, y: 7 }]],
+      difficulty: 3
     }
   },
   { 
@@ -243,7 +251,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Neural Link',
       cols: 22,
       rows: 14,
-      paths: [[{ x: 0, y: 0 }, { x: 21, y: 13 }]]
+      paths: [[{ x: 0, y: 0 }, { x: 21, y: 13 }]],
+      difficulty: 4
     }
   },
   { 
@@ -256,7 +265,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'The Void Gate',
       cols: 20,
       rows: 12,
-      paths: [[{ x: 0, y: 6 }, { x: 5, y: 6 }, { x: 5, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 5 }, { x: 19, y: 5 }]]
+      paths: [[{ x: 0, y: 6 }, { x: 5, y: 6 }, { x: 5, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 5 }, { x: 19, y: 5 }]],
+      difficulty: 4
     }
   },
   { 
@@ -269,7 +279,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       name: 'Mainframe Core',
       cols: 24,
       rows: 16,
-      paths: [[{ x: 12, y: 0 }, { x: 12, y: 15 }, { x: 0, y: 15 }, { x: 0, y: 0 }, { x: 23, y: 0 }, { x: 23, y: 15 }]]
+      paths: [[{ x: 12, y: 0 }, { x: 12, y: 15 }, { x: 0, y: 15 }, { x: 0, y: 0 }, { x: 23, y: 0 }, { x: 23, y: 15 }]],
+      difficulty: 4
     }
   },
   { 
@@ -291,7 +302,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
         [{ x: 0, y: 9 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
         // East entrance (alternative)
         [{ x: 0, y: 2 }, { x: 24, y: 2 }, { x: 24, y: 16 }, { x: 2, y: 16 }, { x: 2, y: 9 }, { x: 25, y: 9 }]
-      ]
+      ],
+      difficulty: 5
     }
   },
   {
@@ -307,7 +319,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       paths: [
         [{ x: 0, y: 6 }, { x: 19, y: 6 }],
         [{ x: 10, y: 0 }, { x: 10, y: 11 }]
-      ]
+      ],
+      difficulty: 3
     }
   },
   {
@@ -324,7 +337,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
         [{ x: 0, y: 2 }, { x: 11, y: 2 }, { x: 11, y: 13 }],
         [{ x: 0, y: 11 }, { x: 11, y: 11 }, { x: 11, y: 13 }],
         [{ x: 21, y: 6 }, { x: 11, y: 6 }, { x: 11, y: 13 }]
-      ]
+      ],
+      difficulty: 4
     }
   },
   {
@@ -340,7 +354,8 @@ const CAMPAIGN_SECTORS: Sector[] = [
       paths: [
         [{ x: 0, y: 4 }, { x: 23, y: 4 }],
         [{ x: 0, y: 11 }, { x: 23, y: 11 }]
-      ]
+      ],
+      difficulty: 4
     }
   }
 ];
@@ -349,6 +364,21 @@ const getTurretDepth = (type: TurretType): number => {
   const config = TURRET_CONFIGS[type];
   if (!config || config.prerequisites.length === 0) return 0;
   return 1 + Math.max(...config.prerequisites.map(getTurretDepth));
+};
+
+const getLayoutDifficulty = (map: MapConfig): number => {
+  if (map.difficulty) return map.difficulty;
+  
+  // Base difficulty from number of entrances
+  if (map.paths.length >= 4) return 5;
+  if (map.paths.length === 3) return 4;
+  if (map.paths.length === 2) return 3;
+  
+  // For single path maps, look at complexity (number of points)
+  // Fewer points usually means more direct/faster paths
+  const points = map.paths[0].length;
+  if (points <= 3) return 2;
+  return 1;
 };
 
 interface DifficultyConfig {
@@ -3651,7 +3681,7 @@ export default function App() {
                               {Array.from({ length: 5 }).map((_, i) => (
                                 <div 
                                   key={i} 
-                                  className={`h-1 rounded-full ${isMobile && isLandscape ? 'w-2' : 'w-3 md:w-4'} ${i < Math.min(5, Math.ceil(map.paths[0].length / 2)) ? 'bg-cyan-500' : 'bg-white/10'}`} 
+                                  className={`h-1 rounded-full ${isMobile && isLandscape ? 'w-2' : 'w-3 md:w-4'} ${i < getLayoutDifficulty(map) ? 'bg-cyan-500' : 'bg-white/10'}`} 
                                 />
                               ))}
                             </div>
