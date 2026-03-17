@@ -2320,6 +2320,42 @@ export default function App() {
     ctx.strokeStyle = glowColor;
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // Enemy Spawn Indicators
+    const start = PATH_POINTS[0];
+    const next = PATH_POINTS[1];
+    if (start && next) {
+      const sx = start.x * GRID_SIZE + GRID_SIZE / 2;
+      const sy = start.y * GRID_SIZE + GRID_SIZE / 2;
+      const nx = next.x * GRID_SIZE + GRID_SIZE / 2;
+      const ny = next.y * GRID_SIZE + GRID_SIZE / 2;
+      
+      const angle = Math.atan2(ny - sy, nx - sx);
+      
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(angle);
+      
+      // Draw Pulse/Arrow
+      ctx.fillStyle = '#ef4444';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#ef4444';
+      
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-10, -10);
+      ctx.lineTo(-10, 10);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Text Label
+      ctx.rotate(-angle);
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 10px Montserrat, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('SPAWN', 0, -15);
+      ctx.restore();
+    }
   }, [CANVAS_WIDTH, CANVAS_HEIGHT, COLS, ROWS, PATH_POINTS, theme]);
 
   const draw = useCallback(() => {
@@ -2879,8 +2915,91 @@ export default function App() {
         {/* Sidebar / Shop */}
         {difficulty && (
           <aside className={`border-white/10 bg-black/30 flex shrink-0 transition-all ${isMobile && isLandscape ? 'w-64 border-r flex-col p-4 overflow-y-auto' : 'w-full md:w-80 border-b md:border-b-0 md:border-r p-3 md:p-4 flex-row md:flex-col overflow-x-auto md:overflow-y-auto'} gap-3 md:gap-4 custom-scrollbar`}>
-            {/* Tabs */}
-            {(gameMode === GameMode.CAMPAIGN || gameMode === GameMode.TUTORIAL) && (
+            {/* Selected Turret View (Overrides tabs if active) */}
+            {selectedMapTurret ? (
+              <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-left-4 duration-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-xl bg-black/40 border border-white/10" style={{ color: selectedMapTurret.config.color }}>
+                      {selectedMapTurret.config.icon}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase italic tracking-tight text-white">{selectedMapTurret.config.name}</h3>
+                      <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-mono font-bold">Level {selectedMapTurret.level}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedMapTurret(null)}
+                    className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <p className="text-[10px] text-white/60 leading-relaxed italic border-l-2 border-white/10 pl-3">
+                    {selectedMapTurret.config.description}
+                  </p>
+                  
+                  <div className="grid grid-cols-2 gap-4 py-3 border-y border-white/5">
+                    <div>
+                      <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Damage</p>
+                      <p className="text-sm font-mono font-bold text-white">{Math.round(selectedMapTurret.damage)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Range</p>
+                      <p className="text-sm font-mono font-bold text-white">{selectedMapTurret.range.toFixed(1)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    {unlockedUpgrades.has(selectedMapTurret.config.type) && selectedMapTurret.level < selectedMapTurret.maxLevel ? (
+                      <button
+                        onClick={() => upgradeTurretOnMap(selectedMapTurret)}
+                        disabled={gold < selectedMapTurret.config.upgradeCost}
+                        className={`
+                          w-full py-4 rounded-xl font-black uppercase tracking-widest text-xs transition-all flex items-center justify-center gap-2
+                          ${gold >= selectedMapTurret.config.upgradeCost
+                            ? 'bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                            : 'bg-white/5 text-white/20 cursor-not-allowed'}
+                        `}
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                        Upgrade ({selectedMapTurret.config.upgradeCost}G)
+                      </button>
+                    ) : selectedMapTurret.level >= selectedMapTurret.maxLevel ? (
+                      <div className="w-full py-4 rounded-xl bg-white/5 text-white/20 font-black uppercase tracking-widest text-xs text-center border border-white/5">
+                        Max Level Reached
+                      </div>
+                    ) : (
+                      <div className="w-full py-4 rounded-xl bg-white/5 text-white/20 font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 border border-white/5">
+                        <Lock className="w-4 h-4" />
+                        Upgrades Locked
+                      </div>
+                    )}
+                    
+                    <button
+                      onClick={() => sellTurret(selectedMapTurret)}
+                      className="w-full py-3 rounded-xl font-black uppercase tracking-widest text-[10px] bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Sell Unit ({Math.floor(selectedMapTurret.config.cost * 0.75)}G)
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="mt-auto pt-4 border-t border-white/5">
+                  <button 
+                    onClick={() => setSelectedMapTurret(null)}
+                    className="w-full py-2 text-[10px] uppercase tracking-widest text-white/40 hover:text-white transition-all"
+                  >
+                    Back to Shop
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {(gameMode === GameMode.CAMPAIGN || gameMode === GameMode.TUTORIAL) && (
               <div className={`${isMobile && isLandscape ? 'p-2' : 'hidden md:block p-4'} bg-emerald-500/10 border border-emerald-500/20 rounded-xl mb-2`}>
                 <div className="flex justify-between items-center mb-1 md:mb-2">
                   <span className="text-[7px] md:text-[9px] uppercase tracking-widest text-emerald-400 font-bold">Sector</span>
@@ -3102,8 +3221,10 @@ export default function App() {
               )}
             </button>
           </section>
-        </aside>
+        </>
       )}
+    </aside>
+  )}
 
         {/* Game Area */}
         <section className={`flex-1 relative ${theme === 'dark' ? 'bg-[radial-gradient(circle_at_center,_#111_0%,_#000_100%)]' : 'bg-[radial-gradient(circle_at_center,_#f1f5f9_0%,_#e2e8f0_100%)]'} flex items-center justify-center overflow-auto custom-scrollbar ${isMobile && isLandscape ? 'p-1' : 'p-4'}`}>
@@ -4380,89 +4501,7 @@ export default function App() {
                 </motion.div>
               )}
 
-            {selectedMapTurret && (
-              <motion.div
-                key="selected-turret-overlay"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-4 left-4 right-4 md:left-[340px] md:right-auto z-30"
-              >
-                <div className={`bg-black/90 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl flex flex-col ${isMobile && isLandscape ? 'p-2 gap-2' : 'p-4 gap-4'} min-w-[300px]`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`${isMobile && isLandscape ? 'p-1.5 rounded-lg' : 'p-3 rounded-xl'} bg-black/40 border border-white/10`} style={{ color: selectedMapTurret.config.color }}>
-                        {selectedMapTurret.config.icon}
-                      </div>
-                      <div>
-                        <h3 className={`${isMobile && isLandscape ? 'text-[10px]' : 'text-sm'} font-black uppercase italic tracking-tight text-white`}>{selectedMapTurret.config.name}</h3>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[8px] md:text-[10px] text-cyan-400 uppercase tracking-widest font-mono font-bold">Level {selectedMapTurret.level}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSelectedMapTurret(null)}
-                      className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <p className="text-[10px] text-white/60 leading-relaxed italic border-l-2 border-white/10 pl-3">
-                      {selectedMapTurret.config.description}
-                    </p>
-                    
-                    <div className="grid grid-cols-2 gap-4 py-2 border-y border-white/5">
-                      <div>
-                        <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Damage</p>
-                        <p className="text-sm font-mono font-bold text-white">{Math.round(selectedMapTurret.damage)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[8px] uppercase tracking-widest text-white/40 mb-0.5">Range</p>
-                        <p className="text-sm font-mono font-bold text-white">{selectedMapTurret.range.toFixed(1)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => sellTurret(selectedMapTurret)}
-                      className="flex-1 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] bg-red-500 text-white hover:bg-red-400 transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(239,68,68,0.2)]"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Sell ({Math.floor(selectedMapTurret.config.cost * 0.75)}G)
-                    </button>
-                    {unlockedUpgrades.has(selectedMapTurret.config.type) && selectedMapTurret.level < selectedMapTurret.maxLevel ? (
-                      <button
-                        onClick={() => upgradeTurretOnMap(selectedMapTurret)}
-                        disabled={gold < selectedMapTurret.config.upgradeCost}
-                        className={`
-                          flex-1 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2
-                          ${gold >= selectedMapTurret.config.upgradeCost
-                            ? 'bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-                            : 'bg-white/5 text-white/20 cursor-not-allowed'}
-                        `}
-                      >
-                        <ArrowUp className="w-3 h-3" />
-                        Upgrade ({selectedMapTurret.config.upgradeCost}G)
-                      </button>
-                    ) : selectedMapTurret.level >= selectedMapTurret.maxLevel ? (
-                      <div className="flex-1 py-3 rounded-xl bg-white/5 text-white/20 font-black uppercase tracking-widest text-[10px] text-center border border-white/5">
-                        Max Level
-                      </div>
-                    ) : (
-                      <div className="flex-1 py-3 rounded-xl bg-white/5 text-white/20 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 border border-white/5">
-                        <Lock className="w-3 h-3" />
-                        Locked
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
+            {/* Removed absolute overlay to prevent blocking map */}
             {selectedTurretType && (
               <motion.div
                 key="selected-inventory-overlay"
@@ -5154,3 +5193,5 @@ export default function App() {
     </div>
   );
 }
+
+
