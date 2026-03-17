@@ -13,6 +13,7 @@ import {
   Coins, 
   Heart, 
   Play, 
+  FastForward,
   RotateCcw,
   Info,
   ShoppingCart,
@@ -1087,7 +1088,7 @@ class Turret {
     return this.config.fireRate * Math.pow(0.85, this.level - 1);
   }
 
-  update(enemies: Enemy[], currentTime: number) {
+  update(enemies: Enemy[], currentTime: number, deltaTime: number) {
     // Targeting: Furthest enemy in range
     let bestTarget: Enemy | null = null;
     let maxDist = -1;
@@ -1116,7 +1117,7 @@ class Turret {
     let angleDiff = this.targetAngle - this.angle;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    this.angle += angleDiff * 0.15;
+    this.angle += angleDiff * 0.15 * (deltaTime / 16.67);
 
     if (this.target && currentTime - this.lastShot >= this.fireRate * 1000) {
       this.lastTargetPos = { x: this.target.x, y: this.target.y };
@@ -1972,6 +1973,7 @@ export default function App() {
   const [currentLore, setCurrentLore] = useState<string | null>(null);
   const [isAutoStart, setIsAutoStart] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [gameSpeed, setGameSpeed] = useState(1);
   const [isTechTreeOpen, setIsTechTreeOpen] = useState(false);
   const [confirmingPurchase, setConfirmingPurchase] = useState<TurretType | null>(null);
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
@@ -2044,6 +2046,7 @@ export default function App() {
   const turretsRef = useRef<Turret[]>([]);
   const requestRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
+  const virtualTimeRef = useRef<number>(0);
   const waveSpawnTimerRef = useRef<number>(0);
   const enemiesToSpawnRef = useRef<number>(0);
   const mousePosRef = useRef<Point | null>(null);
@@ -2067,6 +2070,8 @@ export default function App() {
   }, [isWaveActive, gameOver, difficulty, wave]);
 
   const isPausedRef = useRef(isPaused);
+  const gameSpeedRef = useRef(gameSpeed);
+  const gameTimeRef = useRef(0);
   const gameOverRef = useRef(gameOver);
   const waveRef = useRef(wave);
   const difficultyRef = useRef(difficulty);
@@ -2075,6 +2080,7 @@ export default function App() {
   const unlockedSectorCountRef = useRef(unlockedSectorCount);
 
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+  useEffect(() => { gameSpeedRef.current = gameSpeed; }, [gameSpeed]);
   useEffect(() => { gameOverRef.current = gameOver; }, [gameOver]);
   useEffect(() => { waveRef.current = wave; }, [wave]);
   useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
@@ -2102,11 +2108,10 @@ export default function App() {
     SoundManager.playBuy(); // Reuse buy sound for selling
   };
 
-  const updateLogic = useCallback((deltaTime: number) => {
+  const updateLogic = useCallback((deltaTime: number, virtualTime: number) => {
     const isPaused = isPausedRef.current;
     const gameOver = gameOverRef.current;
     if (isPaused || gameOver) return;
-    const time = performance.now();
     const difficulty = difficultyRef.current;
     const wave = waveRef.current;
     const gameMode = gameModeRef.current;
@@ -2199,7 +2204,7 @@ export default function App() {
 
     // Update Turrets
     turretsRef.current.forEach(turret => {
-      turret.update(enemiesRef.current, time);
+      turret.update(enemiesRef.current, virtualTime, deltaTime);
     });
 
     // Check Wave Completion
@@ -2390,7 +2395,7 @@ export default function App() {
     // Draw Turrets
     turretsRef.current.forEach(turret => {
       const isSelected = selectedMapTurret?.id === turret.id;
-      turret.draw(ctx, time, isSelected);
+      turret.draw(ctx, virtualTimeRef.current, isSelected);
     });
 
     // Draw Placement Preview
@@ -2487,12 +2492,15 @@ export default function App() {
       const deltaTime = lastTimeRef.current ? now - lastTimeRef.current : TICK_RATE;
       lastTimeRef.current = now;
       
+      const speed = gameSpeedRef.current;
+      
       // Process logic in steps if delta is large (background throttling)
-      let remainingDelta = Math.min(deltaTime, 2000); // Cap at 2s to prevent spiral of death
+      let remainingDelta = Math.min(deltaTime, 2000) * speed; // Cap at 2s to prevent spiral of death
       const step = 16.67;
       while (remainingDelta > 0) {
         const currentStep = Math.min(remainingDelta, step);
-        updateLogic(currentStep);
+        virtualTimeRef.current += currentStep;
+        updateLogic(currentStep, virtualTimeRef.current);
         remainingDelta -= currentStep;
         if (remainingDelta < 1) break;
       }
@@ -3244,6 +3252,14 @@ export default function App() {
               Auto-Start: {isAutoStart ? 'ON' : 'OFF'}
             </button>
             
+            <button 
+              onClick={() => setGameSpeed(prev => prev === 1 ? 2 : 1)}
+              className={`w-full py-2.5 md:py-3 rounded-xl border transition-all flex items-center justify-center gap-2 md:gap-3 font-bold uppercase tracking-widest text-[9px] md:text-xs ${gameSpeed === 2 ? 'bg-yellow-500 text-black border-yellow-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]' : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'}`}
+            >
+              <FastForward className={`w-3 h-3 md:w-4 md:h-4 ${gameSpeed === 2 ? 'fill-current' : ''}`} />
+              {gameSpeed === 2 ? '2x Speed Active' : 'Normal Speed'}
+            </button>
+
             <button
               onClick={startWave}
               disabled={isWaveActive || gameOver}
@@ -4038,7 +4054,15 @@ export default function App() {
             )}
           </div>
 
-          {/* Sandbox Controls Overlay */}
+            {/* 2x Speed Indicator */}
+            {gameSpeed === 2 && (
+              <div className="absolute top-4 left-4 z-40 bg-yellow-500 text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.5)] animate-pulse">
+                <FastForward className="w-3 h-3 fill-current" />
+                2x Speed
+              </div>
+            )}
+
+            {/* Sandbox Controls Overlay */}
           {gameMode === GameMode.SANDBOX && (
             <div className="absolute top-4 right-4 z-[60] flex flex-col gap-2">
               <motion.div 
