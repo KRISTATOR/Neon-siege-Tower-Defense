@@ -2005,9 +2005,13 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      onClick={onClose}
       className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
     >
-      <div className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full">
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full"
+      >
         <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
@@ -2196,9 +2200,13 @@ const CommunityMaps: React.FC<CommunityMapsProps> = ({ onClose, onPlay }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      onClick={onClose}
       className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
     >
-      <div className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full">
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full"
+      >
         <div className="p-6 md:p-8 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/5">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
@@ -2839,6 +2847,62 @@ export default function App() {
       }
     }
   }, [gameMode, showTutorial, tutorialStep, isTechTreeOpen, activeTab, inventory, isWaveActive, boughtTurrets]);
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if typing in an input
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') {
+          (document.activeElement as HTMLElement).blur();
+        }
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      // Close all modals on Escape
+      if (e.key === 'Escape') {
+        setIsTechTreeOpen(false);
+        setShowSettings(false);
+        setShowLibrary(false);
+        setShowLevelBuilder(false);
+        setShowCommunityMaps(false);
+        setShowMapSelect(false);
+        setShowAdmin(false);
+        setShowTutorial(false);
+        setShowCommanderProfile(false);
+        setShowEndlessLibrary(false);
+        setShowDifficultySelect(false);
+        setConfirmingPurchase(null);
+        setConfirmingTech(null);
+        setConfirmingUpgradeTech(null);
+        setSelectedMapTurret(null);
+        setSessionToDelete(null);
+        setCurrentLore(null);
+        setIsRetractMode(false);
+        setSelectedTurretType(null);
+      }
+
+      // Tech Tree: T
+      if (key === 't') {
+        setIsTechTreeOpen(prev => !prev);
+      }
+
+      // Armory: A
+      if (key === 'a') {
+        setActiveTab('armory');
+      }
+
+      // Inventory: D
+      if (key === 'd') {
+        setActiveTab('inventory');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Game State Refs (for the loop)
   const enemiesRef = useRef<Enemy[]>([]);
@@ -4742,11 +4806,13 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                onClick={() => setShowCommanderProfile(false)}
                 className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 md:p-8"
               >
                 <motion.div
                   initial={{ scale: 0.9, y: 20 }}
                   animate={{ scale: 1, y: 0 }}
+                  onClick={(e) => e.stopPropagation()}
                   className="w-full max-w-2xl bg-[#050505] border border-amber-500/30 rounded-[2rem] flex flex-col relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500 to-transparent" />
@@ -4855,11 +4921,13 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                onClick={() => setShowEndlessLibrary(false)}
                 className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 md:p-8"
               >
                 <motion.div
                   initial={{ scale: 0.9, y: 20 }}
                   animate={{ scale: 1, y: 0 }}
+                  onClick={(e) => e.stopPropagation()}
                   className="w-full max-w-4xl bg-[#050505] border border-cyan-500/30 rounded-[2rem] flex flex-col max-h-[90vh] relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent" />
@@ -4891,10 +4959,18 @@ export default function App() {
                         {librarySessions.map((session) => {
                           const mapName = CAMPAIGN_SECTORS.find(s => s.mapConfig.id === session.mapId)?.name || 'Unknown Sector';
                           return (
-                            <button
+                            <div
                               key={session.id}
                               onClick={() => loadSession(session)}
-                              className="group relative bg-white/5 border border-white/10 rounded-3xl p-6 hover:bg-white/10 hover:border-cyan-500/50 transition-all text-left overflow-hidden"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  loadSession(session);
+                                }
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              className="group relative bg-white/5 border border-white/10 rounded-3xl p-6 hover:bg-white/10 hover:border-cyan-500/50 transition-all text-left overflow-hidden cursor-pointer"
                             >
                               <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
                                 <Activity className="w-24 h-24" />
@@ -4953,7 +5029,7 @@ export default function App() {
                                   </div>
                                 </div>
                               </div>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -5332,9 +5408,13 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                onClick={() => setIsTechTreeOpen(false)}
                 className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex flex-col p-4 md:p-12 overflow-y-auto"
               >
-                  <div className="max-w-7xl mx-auto w-full flex flex-col h-full">
+                  <div 
+                    onClick={(e) => e.stopPropagation()}
+                    className="max-w-7xl mx-auto w-full flex flex-col h-full"
+                  >
                     <header className={`flex justify-between items-center ${isMobile && isLandscape ? 'mb-6' : 'mb-12'}`}>
                       <div>
                         <h2 className={`${isMobile && isLandscape ? 'text-xl' : 'text-3xl md:text-5xl'} font-black uppercase italic tracking-tighter text-white mb-1 md:mb-2`}>Research Lab</h2>
@@ -5691,11 +5771,13 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => setShowSettings(false)}
             className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8"
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
+              onClick={(e) => e.stopPropagation()}
               className="max-w-md w-full bg-[#050505] border border-white/10 p-10 rounded-[2rem] relative"
             >
               <button onClick={() => setShowSettings(false)} className="absolute top-6 right-6 p-2 text-white/40 hover:text-white">
@@ -5787,11 +5869,13 @@ export default function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
+            onClick={() => setShowTutorial(false)}
             className={`fixed z-[200] flex items-center justify-center p-4 ${gameMode === GameMode.TUTORIAL ? 'bottom-4 right-4 md:bottom-8 md:right-8' : 'inset-0 bg-black/95 backdrop-blur-xl'}`}
           >
             <motion.div
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
+              onClick={(e) => e.stopPropagation()}
               className={`bg-[#0a0a0a] border border-white/10 rounded-[2rem] overflow-hidden shadow-[0_0_100px_rgba(6,182,212,0.15)] ${gameMode === GameMode.TUTORIAL ? 'max-w-md w-full' : 'max-w-2xl w-full'}`}
             >
               <div className={`relative ${gameMode === GameMode.TUTORIAL ? 'p-6' : 'p-8 md:p-12'}`}>
@@ -5897,11 +5981,13 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => setShowLibrary(false)}
             className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8"
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
+              onClick={(e) => e.stopPropagation()}
               className={`w-full bg-[#050505] border border-white/10 rounded-[2rem] md:rounded-[3rem] relative overflow-y-auto custom-scrollbar ${isMobile && isLandscape ? 'max-w-3xl p-6 max-h-[95vh]' : 'max-w-4xl p-10 max-h-[80vh]'}`}
             >
               <button 
@@ -6148,11 +6234,13 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => { setShowAdmin(false); setIsAdminAuthenticated(false); setAdminCode(''); }}
             className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-8"
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
+              onClick={(e) => e.stopPropagation()}
               className={`w-full bg-[#050505] border border-white/10 rounded-[2rem] relative overflow-y-auto flex flex-col custom-scrollbar ${isMobile && isLandscape ? 'max-w-3xl p-6 max-h-[95vh]' : 'max-w-4xl p-10 max-h-[80vh]'}`}
             >
               <button onClick={() => { setShowAdmin(false); setIsAdminAuthenticated(false); setAdminCode(''); }} className={`absolute text-white/40 hover:text-white ${isMobile && isLandscape ? 'top-4 right-4' : 'top-6 right-6'}`}>
