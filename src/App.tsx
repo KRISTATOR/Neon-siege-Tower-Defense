@@ -1699,14 +1699,18 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectionStart, setConnectionStart] = useState<number | null>(null);
-  const [possiblePaths, setPossiblePaths] = useState<Point[][]>([]);
-  const [currentPathIndex, setCurrentPathIndex] = useState(0);
+  const [selectedSpawnIndex, setSelectedSpawnIndex] = useState<number | null>(null);
+  const [spawnPaths, setSpawnPaths] = useState<Record<number, { path: Point[], goalIndex: number }[]>>({});
 
-  const [currentEnemyPath, setCurrentEnemyPath] = useState<Point[] | null>(null);
+  const [currentEnemyPaths, setCurrentEnemyPaths] = useState<Point[][]>([]);
 
   useEffect(() => {
-    setCurrentEnemyPath(findPath());
-  }, [grid]);
+    if (selectedSpawnIndex !== null && spawnPaths[selectedSpawnIndex]) {
+      setCurrentEnemyPaths(spawnPaths[selectedSpawnIndex].map(sp => sp.path));
+    } else {
+      setCurrentEnemyPaths([]);
+    }
+  }, [selectedSpawnIndex, spawnPaths]);
 
   const generatePaths = (startIdx: number, endIdx: number) => {
     const start = { x: startIdx % cols, y: Math.floor(startIdx / cols) };
@@ -1746,109 +1750,231 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
     for (let i = 0; i < targetGrid.length; i++) {
       if (targetGrid[i] === 1) targetGrid[i] = 0;
     }
-    // Apply new path
+    // Apply all paths from all spawns
+    (Object.values(spawnPaths) as { path: Point[], goalIndex: number }[]).forEach(sp => {
+      sp.path.forEach(pt => {
+        const idx = pt.y * cols + pt.x;
+        if (targetGrid[idx] === 0) targetGrid[idx] = 1;
+      });
+    });
+    // Apply the new path
     path.forEach(p => {
       const idx = p.y * cols + p.x;
       if (targetGrid[idx] === 0) targetGrid[idx] = 1;
     });
   };
 
-  const toggleCell = (index: number) => {
-    const newGrid = [...grid];
-    setError(null);
+  const findPathThroughGrid = (startIdx: number, endIdx: number, mustPassThrough?: number) => {
+    const start = { x: startIdx % cols, y: Math.floor(startIdx / cols) };
+    const end = { x: endIdx % cols, y: Math.floor(endIdx / cols) };
+    
+    const getShortest = (s: Point, e: Point) => {
+      const queue: { pos: Point, path: Point[] }[] = [{ pos: s, path: [s] }];
+      const visited = new Set<string>();
+      visited.add(`${s.x},${s.y}`);
 
-    // Auto-pathing logic
-    if (selectedTool === 1) {
-      const cellType = grid[index];
-      if (cellType === 2 || cellType === 3) {
-        if (connectionStart === null) {
-          setConnectionStart(index);
-          return;
-        } else {
-          const startType = grid[connectionStart];
-          if (startType !== cellType) {
-            const paths = generatePaths(connectionStart, index);
-            if (paths.length > 0) {
-              setPossiblePaths(paths);
-              setCurrentPathIndex(0);
-              applyPathToGrid(paths[0], newGrid);
-              setGrid(newGrid);
-              setConnectionStart(null);
-              return;
-            } else {
-              setError('No path possible between these points.');
-              setConnectionStart(null);
-              return;
-            }
-          } else {
-            // Clicked same type, reset or change start
-            setConnectionStart(index);
-            return;
+      while (queue.length > 0) {
+        const { pos, path } = queue.shift()!;
+        if (pos.x === e.x && pos.y === e.y) return path;
+
+        const neighbors = [
+          { x: pos.x + 1, y: pos.y }, { x: pos.x - 1, y: pos.y },
+          { x: pos.x, y: pos.y + 1 }, { x: pos.x, y: pos.y - 1 },
+        ];
+
+        for (const n of neighbors) {
+          const idx = n.y * cols + n.x;
+          if (n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && 
+              (grid[idx] === 1 || grid[idx] === 3 || idx === startIdx || idx === endIdx) && 
+              !visited.has(`${n.x},${n.y}`)) {
+            visited.add(`${n.x},${n.y}`);
+            queue.push({ pos: n, path: [...path, n] });
           }
         }
       }
+      return null;
+    };
+
+    if (mustPassThrough !== undefined) {
+      const mid = { x: mustPassThrough % cols, y: Math.floor(mustPassThrough / cols) };
+      const p1 = getShortest(start, mid);
+      const p2 = getShortest(mid, end);
+      if (p1 && p2) {
+        return [...p1, ...p2.slice(1)];
+      }
+      return null;
     }
 
-    setConnectionStart(null);
-    setPossiblePaths([]);
-
-    if (newGrid[index] === selectedTool) {
-      newGrid[index] = 0;
-    } else {
-      if (selectedTool === 2) {
-        const oldSpawn = newGrid.indexOf(2);
-        if (oldSpawn !== -1) newGrid[oldSpawn] = 0;
-      }
-      if (selectedTool === 3) {
-        const oldGoal = newGrid.indexOf(3);
-        if (oldGoal !== -1) newGrid[oldGoal] = 0;
-      }
-      newGrid[index] = selectedTool;
-    }
-    setGrid(newGrid);
+    return getShortest(start, end);
   };
 
-  const findPath = () => {
-    const spawnIdx = grid.indexOf(2);
-    const goalIdx = grid.indexOf(3);
-    if (spawnIdx === -1 || goalIdx === -1) return null;
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragMode, setDragMode] = useState<'paint' | 'erase' | null>(null);
 
-    const spawn = { x: spawnIdx % cols, y: Math.floor(spawnIdx / cols) };
-    const goal = { x: goalIdx % cols, y: Math.floor(goalIdx / cols) };
+  const handleCellAction = (index: number, isDrag: boolean = false) => {
+    const newGrid = [...grid];
+    setError(null);
 
-    const queue: { pos: Point, path: Point[] }[] = [{ pos: spawn, path: [spawn] }];
-    const visited = new Set<string>();
-    visited.add(`${spawn.x},${spawn.y}`);
+    // If clicking a spawn, select it (only on click, not drag)
+    if (!isDrag && grid[index] === 2) {
+      setSelectedSpawnIndex(index);
+      setConnectionStart(index);
+      return;
+    }
 
-    while (queue.length > 0) {
-      const { pos, path } = queue.shift()!;
-      if (pos.x === goal.x && pos.y === goal.y) return path;
+    // Auto-pathing logic (only on click, not drag)
+    if (!isDrag && selectedTool === 1) {
+      const cellType = grid[index];
+      
+      // If a spawn is selected and we click a PATH cell (type 1), try to re-route
+      if (selectedSpawnIndex !== null && cellType === 1) {
+        const currentPaths = spawnPaths[selectedSpawnIndex] || [];
+        let updated = false;
+        const newSpawnPaths = { ...spawnPaths };
+        const updatedPaths = [...currentPaths];
 
-      const neighbors = [
-        { x: pos.x + 1, y: pos.y },
-        { x: pos.x - 1, y: pos.y },
-        { x: pos.x, y: pos.y + 1 },
-        { x: pos.x, y: pos.y - 1 },
-      ];
+        for (let i = 0; i < updatedPaths.length; i++) {
+          const goalIdx = updatedPaths[i].goalIndex;
+          const newPath = findPathThroughGrid(selectedSpawnIndex, goalIdx, index);
+          if (newPath) {
+            updatedPaths[i] = { ...updatedPaths[i], path: newPath };
+            updated = true;
+            break; // Just update the first one that can be re-routed
+          }
+        }
 
-      for (const n of neighbors) {
-        const idx = n.y * cols + n.x;
-        if (n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && 
-            (grid[idx] === 1 || grid[idx] === 3) && !visited.has(`${n.x},${n.y}`)) {
-          visited.add(`${n.x},${n.y}`);
-          queue.push({ pos: n, path: [...path, n] });
+        if (updated) {
+          newSpawnPaths[selectedSpawnIndex] = updatedPaths;
+          setSpawnPaths(newSpawnPaths);
+          return;
+        }
+      }
+
+      if (cellType === 3) { // Goal
+        if (selectedSpawnIndex !== null) {
+          const existingPathIdx = (spawnPaths[selectedSpawnIndex] || []).findIndex(p => p.goalIndex === index);
+          
+          if (existingPathIdx !== -1) {
+            const newPaths = spawnPaths[selectedSpawnIndex].filter(p => p.goalIndex !== index);
+            const newSpawnPaths = { ...spawnPaths, [selectedSpawnIndex]: newPaths };
+            if (newPaths.length === 0) delete newSpawnPaths[selectedSpawnIndex];
+            setSpawnPaths(newSpawnPaths);
+          } else {
+            const path = findPathThroughGrid(selectedSpawnIndex, index);
+            if (path) {
+              const newPaths = [...(spawnPaths[selectedSpawnIndex] || []), { path, goalIndex: index }];
+              setSpawnPaths({ ...spawnPaths, [selectedSpawnIndex]: newPaths });
+            } else {
+              setError("No path found through painted cells! Paint a path first.");
+            }
+          }
+          return;
         }
       }
     }
-    return null;
+
+    if (!isDrag) setConnectionStart(null);
+
+    const currentType = grid[index];
+    const targetType = selectedTool;
+
+    // Brush logic
+    if (isDrag) {
+      if (dragMode === 'paint') {
+        if (currentType === 0) newGrid[index] = targetType;
+      } else if (dragMode === 'erase') {
+        if (currentType === targetType) newGrid[index] = 0;
+      }
+    } else {
+      // Toggle logic for single click
+      if (currentType === targetType) {
+        newGrid[index] = 0;
+      } else {
+        newGrid[index] = targetType;
+      }
+    }
+
+    // If grid changed, handle side effects
+    if (newGrid[index] !== grid[index]) {
+      if (grid[index] === 1 || newGrid[index] === 1) {
+        // If a path cell is modified, re-validate all paths
+        const newSpawnPaths = { ...spawnPaths };
+        let changed = false;
+        Object.keys(newSpawnPaths).forEach(spawnIdxKey => {
+          const spawnIdx = Number(spawnIdxKey);
+          const updatedPaths = newSpawnPaths[spawnIdx].map(sp => {
+            // Check if current path still works
+            const stillValid = sp.path.every(pt => {
+              const pIdx = pt.y * cols + pt.x;
+              // Path is valid if cell is still path (1), or is the spawn/goal itself
+              return pIdx === spawnIdx || pIdx === sp.goalIndex || (newGrid[pIdx] === 1);
+            });
+            if (stillValid) return sp;
+            // Try to find a new path
+            const newPath = findPathThroughGrid(spawnIdx, sp.goalIndex);
+            return newPath ? { ...sp, path: newPath } : null;
+          }).filter((p): p is { path: Point[], goalIndex: number } => p !== null);
+          
+          if (updatedPaths.length !== newSpawnPaths[spawnIdx].length || 
+              JSON.stringify(updatedPaths) !== JSON.stringify(newSpawnPaths[spawnIdx])) {
+            newSpawnPaths[spawnIdx] = updatedPaths;
+            if (updatedPaths.length === 0) delete newSpawnPaths[spawnIdx];
+            changed = true;
+          }
+        });
+        if (changed) setSpawnPaths(newSpawnPaths);
+      }
+
+      if (grid[index] === 2) {
+        const newSpawnPaths = { ...spawnPaths };
+        delete newSpawnPaths[index];
+        setSpawnPaths(newSpawnPaths);
+        if (selectedSpawnIndex === index) setSelectedSpawnIndex(null);
+      }
+
+      if (grid[index] === 3) {
+        const newSpawnPaths = { ...spawnPaths };
+        let changed = false;
+        Object.keys(newSpawnPaths).forEach(spawnIdxKey => {
+          const spawnIdx = Number(spawnIdxKey);
+          const filtered = newSpawnPaths[spawnIdx].filter(p => p.goalIndex !== index);
+          if (filtered.length !== newSpawnPaths[spawnIdx].length) {
+            newSpawnPaths[spawnIdx] = filtered;
+            if (filtered.length === 0) delete newSpawnPaths[spawnIdx];
+            changed = true;
+          }
+        });
+        if (changed) setSpawnPaths(newSpawnPaths);
+      }
+
+      setGrid(newGrid);
+    }
+  };
+
+  const handleMouseDown = (index: number) => {
+    setIsDragging(true);
+    const mode = grid[index] === selectedTool ? 'erase' : 'paint';
+    setDragMode(mode);
+    handleCellAction(index);
+  };
+
+  const handleMouseEnter = (index: number) => {
+    if (isDragging) {
+      handleCellAction(index, true);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setDragMode(null);
   };
 
   const handleUpload = async () => {
     if (!user) return;
     if (!name.trim()) { setError('Please name your map.'); return; }
     
-    const path = findPath();
-    if (!path) { setError('No valid path from Spawn to Goal!'); return; }
+    const allPaths = (Object.values(spawnPaths) as { path: Point[], goalIndex: number }[][]).flatMap(pathsArr => pathsArr.map(sp => sp.path));
+    if (allPaths.length === 0) { setError('Please connect at least one Spawn to a Goal!'); return; }
 
     setIsUploading(true);
     try {
@@ -1860,7 +1986,7 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
         cols,
         rows,
         grid,
-        paths: [path],
+        paths: allPaths,
         createdAt: new Date().toISOString(),
         likes: 0,
         plays: 0
@@ -1907,19 +2033,22 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
                   gridTemplateColumns: `repeat(${cols}, 1fr)`,
                   width: 'fit-content'
                 }}
+                onMouseLeave={handleMouseUp}
               >
                 {grid.map((cell, i) => (
                   <button
                     key={i}
-                    onClick={() => toggleCell(i)}
+                    onMouseDown={() => handleMouseDown(i)}
+                    onMouseEnter={() => handleMouseEnter(i)}
+                    onMouseUp={handleMouseUp}
                     className={`w-6 h-6 md:w-8 md:h-8 transition-colors relative ${
                       cell === 1 ? 'bg-white/20' : 
                       cell === 2 ? 'bg-emerald-500/50' : 
                       cell === 3 ? 'bg-rose-500/50' : 
                       'bg-black/40 hover:bg-white/5'
-                    } ${connectionStart === i ? 'ring-2 ring-cyan-500 ring-inset' : ''}`}
+                    } ${connectionStart === i || selectedSpawnIndex === i ? 'ring-2 ring-cyan-500 ring-inset' : ''}`}
                   >
-                    {connectionStart === i && (
+                    {(connectionStart === i || selectedSpawnIndex === i) && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="w-1 h-1 bg-cyan-500 rounded-full animate-ping" />
                       </div>
@@ -1928,25 +2057,28 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
                 ))}
               </div>
               
-              {currentEnemyPath && (
+              {currentEnemyPaths.length > 0 && (
                 <svg 
                   className="absolute inset-0 pointer-events-none" 
                   viewBox={`0 0 ${cols} ${rows}`}
                   preserveAspectRatio="none"
                 >
-                  <polyline
-                    points={currentEnemyPath.map(p => `${p.x + 0.5},${p.y + 0.5}`).join(' ')}
-                    fill="none"
-                    stroke="rgba(6, 182, 212, 0.6)"
-                    strokeWidth="0.15"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray="0.2 0.2"
-                    className="animate-[dash_2s_linear_infinite]"
-                  />
+                  {currentEnemyPaths.map((path, idx) => (
+                    <polyline
+                      key={idx}
+                      points={path.map(p => `${p.x + 0.5},${p.y + 0.5}`).join(' ')}
+                      fill="none"
+                      stroke="rgba(6, 182, 212, 0.8)"
+                      strokeWidth="0.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray="0.3 0.3"
+                      className="animate-[dash_2s_linear_infinite]"
+                    />
+                  ))}
                   <style>{`
                     @keyframes dash {
-                      to { stroke-dashoffset: -0.4; }
+                      to { stroke-dashoffset: -0.6; }
                     }
                   `}</style>
                 </svg>
@@ -1972,26 +2104,10 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
                   {tool.name}
                 </button>
               ))}
-
-              {possiblePaths.length > 1 && (
-                <button
-                  onClick={() => {
-                    const nextIdx = (currentPathIndex + 1) % possiblePaths.length;
-                    setCurrentPathIndex(nextIdx);
-                    const newGrid = [...grid];
-                    applyPathToGrid(possiblePaths[nextIdx], newGrid);
-                    setGrid(newGrid);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 transition-all uppercase tracking-widest font-bold text-[10px]"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Cycle Path ({currentPathIndex + 1}/{possiblePaths.length})
-                </button>
-              )}
             </div>
             {selectedTool === 1 && (
               <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold">
-                Tip: Click Spawn then Goal to auto-connect, or paint manually.
+                Tip: Click a Spawn to select it, then click Goals to connect. Click painted path cells to re-route connections.
               </p>
             )}
           </div>
