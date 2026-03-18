@@ -26,6 +26,10 @@
       "description": "Saves user game progress.",
       "type": "object",
       "properties": {
+        "nickname": {
+          "type": "string",
+          "description": "User's chosen display name."
+        },
         "unlockedSectorCount": {
           "type": "integer",
           "description": "Number of sectors unlocked in campaign."
@@ -58,6 +62,21 @@
         }
       },
       "required": ["unlockedSectorCount", "lastUpdated"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "A user's entry in the global leaderboard.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "nickname": { "type": "string" },
+        "highestWave": { "type": "integer" },
+        "totalEnemiesKilled": { "type": "integer" },
+        "totalGoldEarned": { "type": "integer" },
+        "commanderLevel": { "type": "integer" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "nickname", "highestWave", "totalEnemiesKilled", "totalGoldEarned", "commanderLevel", "lastUpdated"]
     },
     "EndlessSession": {
       "title": "EndlessSession",
@@ -132,6 +151,10 @@
     "community_maps": {
       "schema": "CommunityMap",
       "description": "Public collection of player-created maps."
+    },
+    "leaderboard": {
+      "schema": "LeaderboardEntry",
+      "description": "Global leaderboard for all players."
     },
     "users/{userId}/progress": {
       "schema": "UserProgress",

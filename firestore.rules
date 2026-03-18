@@ -23,7 +23,8 @@ service cloud.firestore {
     }
 
     function isValidProgress(data) {
-      return data.unlockedSectorCount is int && data.unlockedSectorCount >= 1 &&
+      return (data.nickname == null || (data.nickname is string && data.nickname.size() >= 2 && data.nickname.size() <= 20)) &&
+             data.unlockedSectorCount is int && data.unlockedSectorCount >= 1 &&
              data.lastUpdated is string &&
              (data.highestEndlessWaves == null || data.highestEndlessWaves is map) &&
              (data.totalWavesSurvived == null || data.totalWavesSurvived is int) &&
@@ -33,6 +34,16 @@ service cloud.firestore {
              (data.unlockedTurrets == null || data.unlockedTurrets is list) &&
              (data.unlockedUpgrades == null || data.unlockedUpgrades is list) &&
              (data.encounteredEnemies == null || data.encounteredEnemies is list);
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.userId is string &&
+             data.nickname is string && data.nickname.size() >= 2 && data.nickname.size() <= 20 &&
+             data.highestWave is int &&
+             data.totalEnemiesKilled is int &&
+             data.totalGoldEarned is int &&
+             data.commanderLevel is int &&
+             data.lastUpdated is string;
     }
 
     function isValidEndlessSession(data) {
@@ -75,6 +86,11 @@ service cloud.firestore {
                       request.resource.data.userId == request.auth.uid &&
                       isValidCommunityMap(request.resource.data);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /leaderboard/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId) && isValidLeaderboardEntry(request.resource.data);
     }
 
     match /users/{userId}/progress/{docId} {

@@ -2167,6 +2167,129 @@ const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
   );
 };
 
+// --- Leaderboard Component ---
+interface LeaderboardProps {
+  onClose: () => void;
+  currentUserId?: string;
+}
+
+const Leaderboard: React.FC<LeaderboardProps> = ({ onClose, currentUserId }) => {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState<'highestWave' | 'totalEnemiesKilled' | 'totalGoldEarned' | 'commanderLevel'>('highestWave');
+
+  useEffect(() => {
+    setLoading(true);
+    const q = query(collection(db, 'leaderboard'), orderBy(category, 'desc'), limit(50));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    }, (error) => {
+      console.error(error);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [category]);
+
+  const categories = [
+    { id: 'highestWave', name: 'Max Wave', icon: <Activity className="w-4 h-4" /> },
+    { id: 'totalEnemiesKilled', name: 'Kills', icon: <Skull className="w-4 h-4" /> },
+    { id: 'totalGoldEarned', name: 'Gold', icon: <Coins className="w-4 h-4" /> },
+    { id: 'commanderLevel', name: 'Level', icon: <Shield className="w-4 h-4" /> },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 md:p-8"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-4xl bg-[#050505] border border-cyan-500/30 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full relative"
+      >
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent" />
+        
+        <div className="p-6 md:p-10 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-6 bg-white/5">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
+              <Star className="w-6 h-6 text-cyan-400" />
+            </div>
+            <div>
+              <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter text-cyan-400">Global Rankings</h2>
+              <p className="text-white/40 font-mono text-[9px] md:text-xs uppercase tracking-[0.3em] mt-1">Elite Commander Network</p>
+            </div>
+          </div>
+          
+          <div className="flex bg-black/40 p-1 rounded-xl border border-white/10">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id as any)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${category === cat.id ? 'bg-cyan-500 text-black' : 'text-white/40 hover:text-white'}`}
+              >
+                {cat.icon}
+                <span className="hidden sm:inline">{cat.name}</span>
+              </button>
+            ))}
+          </div>
+
+          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-2xl transition-colors">
+            <X className="w-6 h-6 text-white/40" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
+          {loading ? (
+            <div className="h-64 flex flex-col items-center justify-center gap-4">
+              <Activity className="w-12 h-12 text-cyan-500 animate-spin" />
+              <p className="text-white/40 font-bold uppercase tracking-widest text-xs">Syncing Data Streams...</p>
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="h-64 flex flex-col items-center justify-center gap-4 text-center">
+              <Globe className="w-16 h-16 text-white/10" />
+              <h3 className="text-xl font-bold text-white/60 uppercase tracking-widest">No Data Recorded</h3>
+              <p className="text-white/30 text-sm max-w-xs">Be the first to leave your mark on the global network!</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {entries.map((entry, index) => (
+                <div 
+                  key={entry.id}
+                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${entry.userId === currentUserId ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-white/5 border-white/10'}`}
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg font-mono ${index === 0 ? 'bg-amber-500 text-black' : index === 1 ? 'bg-slate-300 text-black' : index === 2 ? 'bg-amber-700 text-white' : 'bg-white/5 text-white/40'}`}>
+                    {index + 1}
+                  </div>
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-lg font-black text-white uppercase italic">{entry.nickname || 'Anonymous'}</h3>
+                      {entry.userId === currentUserId && (
+                        <span className="px-2 py-0.5 bg-cyan-500 text-black text-[8px] font-bold uppercase tracking-widest rounded">You</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-white/20 font-mono uppercase tracking-widest">LVL {entry.commanderLevel} Commander</p>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-1">{categories.find(c => c.id === category)?.name}</p>
+                    <p className="text-xl font-black text-cyan-400 font-mono">
+                      {category === 'totalGoldEarned' ? `${(entry[category] / 1000).toFixed(1)}K` : entry[category]}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 // --- Community Maps Component ---
 interface CommunityMapsProps {
   onClose: () => void;
@@ -2416,9 +2539,13 @@ export default function App() {
 
   const [totalWavesSurvived, setTotalWavesSurvived] = useState(0);
   const [totalSessionsSaved, setTotalSessionsSaved] = useState(0);
+  const [totalEnemiesKilled, setTotalEnemiesKilled] = useState(0);
+  const [totalGoldEarned, setTotalGoldEarned] = useState(0);
   const [commanderExp, setCommanderExp] = useState(0);
   const [medals, setMedals] = useState<string[]>([]);
+  const [nickname, setNickname] = useState('');
   const [showCommanderProfile, setShowCommanderProfile] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [achievementNotification, setAchievementNotification] = useState<any | null>(null);
 
   const getCommanderLevel = (exp: number) => Math.floor(Math.sqrt(exp / 100)) + 1;
@@ -2432,12 +2559,15 @@ export default function App() {
       const unsubscribe = onSnapshot(progressDoc, (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
+          setNickname(data.nickname || '');
           setUnlockedSectorCount(data.unlockedSectorCount || 1);
           setHighestEndlessWaves(data.highestEndlessWaves || {});
           setEndlessSessions(data.endlessSessions || {});
           setSandboxSessions(data.sandboxSessions || {});
           setTotalWavesSurvived(data.totalWavesSurvived || 0);
           setTotalSessionsSaved(data.totalSessionsSaved || 0);
+          setTotalEnemiesKilled(data.totalEnemiesKilled || 0);
+          setTotalGoldEarned(data.totalGoldEarned || 0);
           setCommanderExp(data.commanderExp || 0);
           setMedals(data.medals || []);
           
@@ -2643,6 +2773,19 @@ export default function App() {
         }
       }
 
+      // Update Leaderboard
+      const leaderboardDoc = doc(db, `leaderboard/${user.uid}`);
+      const highestWave = Math.max(...(Object.values(updatedWaves) as number[]), 0);
+      await setDoc(leaderboardDoc, {
+        userId: user.uid,
+        nickname: nickname || user.displayName || 'Anonymous',
+        highestWave: highestWave,
+        totalEnemiesKilled: totalEnemiesKilled,
+        totalGoldEarned: totalGoldEarned,
+        commanderLevel: getCommanderLevel(newExp),
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+
       await setDoc(progressDoc, {
         unlockedSectorCount: newSectorCount ?? unlockedSectorCount,
         highestEndlessWaves: updatedWaves,
@@ -2653,6 +2796,9 @@ export default function App() {
         unlockedUpgrades: newUnlockedUpgrades ?? Array.from(unlockedUpgrades),
         totalWavesSurvived: totalWavesSurvived + (expGain ? 1 : 0),
         totalSessionsSaved: newTotalSaved,
+        totalEnemiesKilled: totalEnemiesKilled,
+        totalGoldEarned: totalGoldEarned,
+        nickname: nickname,
         commanderExp: newExp,
         medals: newMedals,
         lastUpdated: new Date().toISOString()
@@ -3046,6 +3192,8 @@ export default function App() {
         enemiesRef.current.splice(i, 1);
       } else if (enemy.isDead) {
         goldEarned += 15;
+        setTotalEnemiesKilled(prev => prev + 1);
+        setTotalGoldEarned(prev => prev + 15);
         SoundManager.playDeath();
         enemiesRef.current.splice(i, 1);
       }
@@ -4256,6 +4404,13 @@ export default function App() {
               >
                 <div className={`flex flex-col items-center ${isMobile && isLandscape ? 'gap-2 mb-4' : 'gap-4 md:gap-6 mb-8 md:mb-12'}`}>
                   <div className={`absolute flex items-center ${isMobile && isLandscape ? 'top-2 right-2 gap-2' : 'top-4 right-4 md:top-8 md:right-8 gap-2 md:gap-4'}`}>
+                    <button
+                      onClick={() => setShowLeaderboard(true)}
+                      className={`group flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-cyan-500/50 transition-all text-white/60 hover:text-white ${isMobile && isLandscape ? 'px-3 py-1.5 text-[8px]' : 'px-4 py-2 text-[10px] md:text-xs'} font-bold uppercase tracking-widest`}
+                    >
+                      <Globe className="w-3 h-3 md:w-4 md:h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+                      Leaderboard
+                    </button>
                     {user ? (
                       <div className="flex items-center gap-2 md:gap-4">
                         <div className="text-right hidden md:block">
@@ -4607,6 +4762,13 @@ export default function App() {
                         <ChevronLeft className={`${isMobile && isLandscape ? 'w-4 h-4' : 'w-4 h-4 md:w-6 md:h-6'} text-white/40 group-hover:text-cyan-400`} />
                       </button>
                       <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight`}>Game Difficulty</h2>
+                      <button
+                        onClick={() => setShowLeaderboard(true)}
+                        className={`ml-4 flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-3 py-1.5 text-[8px]' : 'px-4 py-2 text-[10px]'}`}
+                      >
+                        <Globe className="w-3 h-3 md:w-4 md:h-4" />
+                        Leaderboard
+                      </button>
                     </div>
                     <div className={`grid gap-3 md:gap-4 ${isMobile && isLandscape ? 'grid-cols-3' : 'grid-cols-1'}`}>
                       {(Object.keys(DIFFICULTY_CONFIGS) as Difficulty[]).map(diff => (
@@ -4641,6 +4803,21 @@ export default function App() {
                     <div className={`absolute -left-6 top-1/2 -translate-y-1/2 w-1 bg-emerald-500 rounded-full ${isMobile && isLandscape ? 'h-6' : 'h-10'}`} />
                     <h2 className={`${isMobile && isLandscape ? 'text-2xl' : 'text-4xl md:text-5xl'} font-black uppercase italic tracking-tighter text-emerald-400`}>Sector Map</h2>
                     {!isLandscape && <p className="text-white/40 font-mono text-[9px] uppercase tracking-[0.4em] mt-1">Grid Restoration Protocol: {unlockedSectorCount}/11</p>}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setShowLeaderboard(true)}
+                      className={`flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-3 py-1.5 text-[8px]' : 'px-4 py-2 text-[10px]'}`}
+                    >
+                      <Globe className="w-3 h-3 md:w-4 md:h-4" />
+                      Leaderboard
+                    </button>
+                    <button 
+                      onClick={resetToStart}
+                      className={`bg-white/5 hover:bg-white/10 rounded-full transition-colors border border-white/10 group ${isMobile && isLandscape ? 'p-1.5' : 'p-2 md:p-3'}`}
+                    >
+                      <X className={`${isMobile && isLandscape ? 'w-4 h-4' : 'w-4 h-4 md:w-6 md:h-6'} text-white/40 group-hover:text-red-500`} />
+                    </button>
                   </div>
                 </header>
 
@@ -4836,6 +5013,26 @@ export default function App() {
                   </div>
 
                   <div className="p-6 md:p-10 space-y-8">
+                    {/* Nickname Section */}
+                    <div className="space-y-4">
+                      <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Commander Nickname</p>
+                      <div className="flex gap-3">
+                        <input
+                          type="text"
+                          value={nickname}
+                          onChange={(e) => setNickname(e.target.value.slice(0, 20))}
+                          placeholder="Enter Nickname..."
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono focus:outline-none focus:border-amber-500/50 transition-colors"
+                        />
+                        <button
+                          onClick={() => saveProgress()}
+                          className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase italic rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-95"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Level Progress */}
                     <div className="space-y-4">
                       <div className="flex justify-between items-end">
@@ -4858,14 +5055,18 @@ export default function App() {
                     </div>
 
                     {/* Stats Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                         <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Waves Survived</p>
                         <p className="text-xl font-black text-white font-mono">{totalWavesSurvived}</p>
                       </div>
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                        <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Sessions Saved</p>
-                        <p className="text-xl font-black text-white font-mono">{totalSessionsSaved}</p>
+                        <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Enemies Killed</p>
+                        <p className="text-xl font-black text-white font-mono">{totalEnemiesKilled}</p>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Gold Earned</p>
+                        <p className="text-xl font-black text-white font-mono">{totalGoldEarned}</p>
                       </div>
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                         <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Max Wave</p>
@@ -4908,9 +5109,35 @@ export default function App() {
                         })}
                       </div>
                     </div>
+                    
+                    <div className="flex flex-wrap gap-4 justify-center mt-8">
+                      <button
+                        onClick={() => setShowLeaderboard(true)}
+                        className="flex items-center gap-2 px-6 py-3 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest text-xs"
+                      >
+                        <Globe className="w-4 h-4" />
+                        View Global Rankings
+                      </button>
+                      <button
+                        onClick={() => setShowCommanderProfile(false)}
+                        className="px-8 py-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white/60 font-bold uppercase tracking-widest text-xs"
+                      >
+                        Close Profile
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
               </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Global Leaderboard Modal */}
+          <AnimatePresence>
+            {showLeaderboard && (
+              <Leaderboard 
+                onClose={() => setShowLeaderboard(false)} 
+                currentUserId={user?.uid}
+              />
             )}
           </AnimatePresence>
 
@@ -5718,6 +5945,13 @@ export default function App() {
                   >
                     <RotateCcw className="w-5 h-5" />
                     Reboot System
+                  </button>
+                  <button
+                    onClick={() => setShowLeaderboard(true)}
+                    className="w-full py-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-3"
+                  >
+                    <Globe className="w-5 h-5" />
+                    Global Leaderboard
                   </button>
                   <button
                     onClick={resetToStart}
