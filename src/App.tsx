@@ -2586,6 +2586,8 @@ export default function App() {
           setTotalSessionsSaved(data.totalSessionsSaved || 0);
           setTotalEnemiesKilled(data.totalEnemiesKilled || 0);
           setTotalGoldEarned(data.totalGoldEarned || 0);
+          setGold(data.gold ?? 100);
+          setInventory(data.inventory || EMPTY_INVENTORY);
           setCommanderExp(data.commanderExp || 0);
           setMedals(data.medals || []);
           
@@ -2678,7 +2680,7 @@ export default function App() {
   const [sandboxSessions, setSandboxSessions] = useState<Record<string, any>>({});
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string, type: 'endless' | 'sandbox' } | null>(null);
 
-  const saveProgress = async (
+  const saveProgress = async (params: {
     newSectorCount?: number, 
     newWave?: number, 
     newEncountered?: string[], 
@@ -2689,10 +2691,16 @@ export default function App() {
     expGain?: number,
     sessionSaved?: boolean,
     currentGold?: number,
+    newInventory?: Record<TurretType, number>,
     currentLives?: number,
     campaignComplete?: boolean
-  ) => {
+  } = {}) => {
     if (!user) return;
+    const { 
+      newSectorCount, newWave, newEncountered, newUnlockedTurrets, 
+      newUnlockedUpgrades, newEndlessSession, targetMapId, expGain, 
+      sessionSaved, currentGold, newInventory, currentLives, campaignComplete 
+    } = params;
     setIsSyncing(true);
     const mapId = targetMapId || currentMapConfig.id;
     const path = `users/${user.uid}/progress/current`;
@@ -2806,6 +2814,8 @@ export default function App() {
         totalSessionsSaved: newTotalSaved,
         totalEnemiesKilled: totalEnemiesKilled,
         totalGoldEarned: totalGoldEarned,
+        gold: currentGold ?? goldRef.current,
+        inventory: newInventory ?? inventoryRef.current,
         nickname: nickname,
         commanderExp: newExp,
         medals: newMedals,
@@ -3174,7 +3184,7 @@ export default function App() {
           setEncounteredEnemies(prev => {
             const next = new Set(prev);
             next.add(type);
-            if (user) saveProgress(unlockedSectorCount, undefined, Array.from(next) as string[], undefined, undefined, undefined, undefined, undefined, undefined, goldRef.current, livesRef.current);
+            if (user) saveProgress({ newSectorCount: unlockedSectorCount, newEncountered: Array.from(next) as string[], currentGold: goldRef.current, currentLives: livesRef.current });
             return next;
           });
           
@@ -3222,7 +3232,7 @@ export default function App() {
       setGameOver(true);
       gameOverRef.current = true;
       if (user && gameMode === GameMode.ENDLESS) {
-        saveProgress(undefined, undefined, undefined, undefined, undefined, null, undefined, undefined, undefined, goldRef.current, livesRef.current);
+        saveProgress({ newEndlessSession: null, currentGold: goldRef.current, currentLives: livesRef.current });
       }
     }
 
@@ -3250,12 +3260,12 @@ export default function App() {
           setUnlockedSectorCount(prev => {
             const isLastSector = currentSectorIndex === 10;
             const nextCount = (currentSectorIndex + 1 === prev && prev < 11) ? prev + 1 : prev;
-            if (user) saveProgress(nextCount, wave, undefined, undefined, undefined, undefined, undefined, undefined, undefined, goldRef.current, livesRef.current, isLastSector);
+            if (user) saveProgress({ newSectorCount: nextCount, newWave: wave, currentGold: goldRef.current, currentLives: livesRef.current, campaignComplete: isLastSector });
             return nextCount;
           });
         } else {
           // Save progress on wave completion in campaign too
-          if (user) saveProgress(undefined, wave, undefined, undefined, undefined, undefined, undefined, undefined, undefined, goldRef.current, livesRef.current);
+          if (user) saveProgress({ newWave: wave, currentGold: goldRef.current, currentLives: livesRef.current });
         }
       } else if (gameMode === GameMode.ENDLESS || gameMode === GameMode.SANDBOX) {
         if (user) {
@@ -3274,7 +3284,7 @@ export default function App() {
             unlockedUpgrades: Array.from(unlockedUpgradesRef.current),
             difficulty: difficulty
           };
-          saveProgress(unlockedSectorCount, wave, undefined, undefined, undefined, session, undefined, 10, true, goldRef.current, livesRef.current);
+          saveProgress({ newSectorCount: unlockedSectorCount, newWave: wave, newEndlessSession: session, expGain: 10, sessionSaved: true, currentGold: goldRef.current, currentLives: livesRef.current });
         }
       }
     }
@@ -3628,6 +3638,9 @@ export default function App() {
       setConfirmingPurchase(null);
       setPurchaseQuantity(1);
       SoundManager.playBuy();
+      const nextGold = gold - totalCost;
+      const nextInventory = { ...inventory, [type]: inventory[type] + quantity };
+      if (user) saveProgress({ currentGold: nextGold, newInventory: nextInventory });
     }
   };
 
@@ -3635,7 +3648,8 @@ export default function App() {
     const config = TURRET_CONFIGS[type];
     const hasPrereqs = config.prerequisites.every(p => unlockedTurrets.has(p));
     if (gold >= config.unlockCost && !unlockedTurrets.has(type) && hasPrereqs) {
-      setGold(prev => prev - config.unlockCost);
+      const nextGold = gold - config.unlockCost;
+      setGold(nextGold);
       const nextTurrets = new Set(unlockedTurrets);
       nextTurrets.add(type);
       setUnlockedTurrets(nextTurrets);
@@ -3647,20 +3661,21 @@ export default function App() {
       });
       SoundManager.playBuy();
       setConfirmingTech(null);
-      if (user) saveProgress(undefined, undefined, undefined, Array.from(nextTurrets) as string[], undefined, undefined, undefined, undefined, undefined, goldRef.current, livesRef.current);
+      if (user) saveProgress({ newUnlockedTurrets: Array.from(nextTurrets) as string[], currentGold: nextGold, currentLives: livesRef.current });
     }
   };
 
   const unlockUpgradeTech = (type: TurretType) => {
     const config = TURRET_CONFIGS[type];
     if (gold >= config.upgradeUnlockCost && unlockedTurrets.has(type) && !unlockedUpgrades.has(type)) {
-      setGold(prev => prev - config.upgradeUnlockCost);
+      const nextGold = gold - config.upgradeUnlockCost;
+      setGold(nextGold);
       const nextUpgrades = new Set(unlockedUpgrades);
       nextUpgrades.add(type);
       setUnlockedUpgrades(nextUpgrades);
       SoundManager.playBuy();
       setConfirmingUpgradeTech(null);
-      if (user) saveProgress(undefined, undefined, undefined, undefined, Array.from(nextUpgrades) as string[], undefined, undefined, undefined, undefined, goldRef.current, livesRef.current);
+      if (user) saveProgress({ newUnlockedUpgrades: Array.from(nextUpgrades) as string[], currentGold: nextGold, currentLives: livesRef.current });
     }
   };
 
@@ -3753,7 +3768,7 @@ export default function App() {
     setShowDifficultySelect(false);
     SoundManager.playBuy();
     if (user && map) {
-      saveProgress(undefined, undefined, undefined, undefined, undefined, null, map.id, undefined, undefined, goldRef.current, livesRef.current);
+      saveProgress({ newEndlessSession: null, targetMapId: map.id, currentGold: goldRef.current, currentLives: livesRef.current });
     }
   };
 
@@ -3785,7 +3800,7 @@ export default function App() {
     setShowDifficultySelect(false);
     SoundManager.playBuy();
     if (user && map) {
-      saveProgress(undefined, undefined, undefined, undefined, undefined, null, map.id, undefined, undefined, goldRef.current, livesRef.current);
+      saveProgress({ newEndlessSession: null, targetMapId: map.id, currentGold: goldRef.current, currentLives: livesRef.current });
     }
   };
 
