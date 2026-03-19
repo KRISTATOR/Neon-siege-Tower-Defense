@@ -48,7 +48,9 @@ import {
   Upload,
   Download,
   Search,
-  Share2
+  Share2,
+  Check,
+  Save
 } from 'lucide-react';
 import { db, auth } from './firebase';
 import { collection, addDoc, getDocs, query, orderBy, doc, setDoc, getDoc, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
@@ -2258,7 +2260,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ onClose, currentUserId }) => 
               {entries.map((entry, index) => (
                 <div 
                   key={entry.id}
-                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${entry.userId === currentUserId ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-white/5 border-white/10'}`}
+                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${entry.userId === currentUserId ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]' : 'bg-white/5 border-white/10'}`}
                 >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg font-mono ${index === 0 ? 'bg-amber-500 text-black' : index === 1 ? 'bg-slate-300 text-black' : index === 2 ? 'bg-amber-700 text-white' : 'bg-white/5 text-white/40'}`}>
                     {index + 1}
@@ -2277,12 +2279,25 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ onClose, currentUserId }) => 
                   <div className="text-right">
                     <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-1">{categories.find(c => c.id === category)?.name}</p>
                     <p className="text-xl font-black text-cyan-400 font-mono">
-                      {category === 'totalGoldEarned' ? `${(entry[category] / 1000).toFixed(1)}K` : entry[category]}
+                      {category === 'totalGoldEarned' 
+                        ? (entry[category] >= 1000 ? `${(entry[category] / 1000).toFixed(1)}K` : entry[category])
+                        : entry[category]}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center">
+          <p className="text-[8px] text-white/20 uppercase tracking-[0.2em] font-mono">
+            Top 50 Commanders Synchronized
+          </p>
+          {entries.length > 0 && (
+            <p className="text-[8px] text-white/20 uppercase tracking-[0.2em] font-mono">
+              Last Sync: {new Date(Math.max(...entries.map(e => new Date(e.lastUpdated).getTime()))).toLocaleTimeString()}
+            </p>
           )}
         </div>
       </div>
@@ -2434,6 +2449,8 @@ export default function App() {
   const [gold, setGold] = useState(100);
   const [lives, setLives] = useState(10);
   const [wave, setWave] = useState(0);
+  const [enemiesKilledThisRun, setEnemiesKilledThisRun] = useState(0);
+  const [goldEarnedThisRun, setGoldEarnedThisRun] = useState(0);
   const isWaveActiveRef = useRef(false);
   const [isWaveActive, _setIsWaveActive] = useState(false);
   const setIsWaveActive = (val: boolean) => {
@@ -2544,6 +2561,7 @@ export default function App() {
   const [commanderExp, setCommanderExp] = useState(0);
   const [medals, setMedals] = useState<string[]>([]);
   const [nickname, setNickname] = useState('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showCommanderProfile, setShowCommanderProfile] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [achievementNotification, setAchievementNotification] = useState<any | null>(null);
@@ -2586,10 +2604,10 @@ export default function App() {
       });
       return () => unsubscribe();
     }
-  }, [user]);
-
-  const [librarySessions, setLibrarySessions] = useState<any[]>([]);
+  }, [user]);  const [endlessSessionsList, setEndlessSessionsList] = useState<any[]>([]);
+  const [sandboxSessionsList, setSandboxSessionsList] = useState<any[]>([]);
   const [showEndlessLibrary, setShowEndlessLibrary] = useState(false);
+  const [showSandboxLibrary, setShowSandboxLibrary] = useState(false);
 
   useEffect(() => {
     if (isAuthReady && user) {
@@ -2599,26 +2617,14 @@ export default function App() {
       const endlessQ = query(collection(db, endlessPath), orderBy('lastUpdated', 'desc'));
       const sandboxQ = query(collection(db, sandboxPath), orderBy('lastUpdated', 'desc'));
       
-      let endlessData: any[] = [];
-      let sandboxData: any[] = [];
-      
-      const updateLibrary = () => {
-        const combined = [...endlessData, ...sandboxData].sort((a, b) => 
-          new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
-        );
-        setLibrarySessions(combined);
-      };
-
       const unsubscribeEndless = onSnapshot(endlessQ, (snapshot) => {
-        endlessData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'endless' }));
-        updateLibrary();
+        setEndlessSessionsList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'endless' })));
       }, (error) => {
         handleFirestoreError(error, OperationType.LIST, endlessPath);
       });
 
       const unsubscribeSandbox = onSnapshot(sandboxQ, (snapshot) => {
-        sandboxData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'sandbox' }));
-        updateLibrary();
+        setSandboxSessionsList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'sandbox' })));
       }, (error) => {
         handleFirestoreError(error, OperationType.LIST, sandboxPath);
       });
@@ -2628,9 +2634,11 @@ export default function App() {
         unsubscribeSandbox();
       };
     } else if (isAuthReady && !user) {
-      setLibrarySessions([]);
+      setEndlessSessionsList([]);
+      setSandboxSessionsList([]);
     }
   }, [isAuthReady, user]);
+;
 
   const loadSession = (session: any) => {
     setGameMode(session.type === 'sandbox' ? GameMode.SANDBOX : GameMode.ENDLESS);
@@ -3194,6 +3202,8 @@ export default function App() {
         goldEarned += 15;
         setTotalEnemiesKilled(prev => prev + 1);
         setTotalGoldEarned(prev => prev + 15);
+        setEnemiesKilledThisRun(prev => prev + 1);
+        setGoldEarnedThisRun(prev => prev + 15);
         SoundManager.playDeath();
         enemiesRef.current.splice(i, 1);
       }
@@ -3922,6 +3932,8 @@ export default function App() {
       setGold(100);
       setLives(10);
       setWave(0);
+      setEnemiesKilledThisRun(0);
+      setGoldEarnedThisRun(0);
       setUnlockedTurrets(new Set([TurretType.BASIC]));
       setUnlockedUpgrades(new Set());
       setSelectedMapTurret(null);
@@ -4545,85 +4557,52 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className={`grid grid-cols-1 md:grid-cols-2 ${isMobile && isLandscape ? 'gap-4 mb-4' : 'gap-4 md:gap-8 mb-12'}`}>
-                      <button
-                        onClick={() => setShowLevelBuilder(true)}
-                        className={`group relative bg-white/5 border border-white/10 rounded-[1.5rem] md:rounded-[2rem] hover:bg-white/10 hover:border-cyan-500/50 transition-all text-left overflow-hidden ${isMobile && isLandscape ? 'p-6' : 'p-6 md:p-10'}`}
-                      >
-                        <div className="absolute top-0 right-0 p-4 md:p-6 opacity-10 group-hover:opacity-20 transition-opacity">
-                          <MapIcon className={`${isMobile && isLandscape ? 'w-12 h-12' : 'w-20 h-20 md:w-32 md:h-32'}`} />
-                        </div>
-                        <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight mb-1 md:mb-4 text-cyan-400`}>Level Builder</h2>
-                        <p className={`text-white/60 leading-relaxed ${isMobile && isLandscape ? 'text-[8px] mb-2' : 'text-[10px] md:text-sm mb-4 md:mb-8'}`}>
-                          Design your own battlefields and share them with the world.
-                        </p>
-                        <div className="flex items-center gap-2 text-cyan-500 font-bold uppercase tracking-widest text-[8px] md:text-xs">
-                          Create Protocol <ChevronRight className="w-3 h-3 md:w-4 md:h-4" />
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => setShowCommunityMaps(true)}
-                        className={`group relative bg-white/5 border border-white/10 rounded-[1.5rem] md:rounded-[2rem] hover:bg-white/10 hover:border-purple-500/50 transition-all text-left overflow-hidden ${isMobile && isLandscape ? 'p-6' : 'p-6 md:p-10'}`}
-                      >
-                        <div className="absolute top-0 right-0 p-4 md:p-6 opacity-10 group-hover:opacity-20 transition-opacity">
-                          <Globe className={`${isMobile && isLandscape ? 'w-12 h-12' : 'w-20 h-20 md:w-32 md:h-32'}`} />
-                        </div>
-                        <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight mb-1 md:mb-4 text-purple-400`}>Community Maps</h2>
-                        <p className={`text-white/60 leading-relaxed ${isMobile && isLandscape ? 'text-[8px] mb-2' : 'text-[10px] md:text-sm mb-4 md:mb-8'}`}>
-                          Play custom maps created by other commanders.
-                        </p>
-                        <div className="flex items-center gap-2 text-purple-500 font-bold uppercase tracking-widest text-[8px] md:text-xs">
-                          Explore Network <ChevronRight className="w-3 h-3 md:w-4 md:h-4" />
-                        </div>
-                      </button>
-                    </div>
 
                     <div className="flex flex-col md:flex-row gap-4 justify-center">
-                      <button
-                        onClick={() => setShowCommanderProfile(true)}
-                        className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-amber-500/50 transition-all text-white/60 hover:text-white ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 text-xs md:text-sm'} font-bold uppercase tracking-widest`}
-                      >
-                        <Shield className="w-4 h-4 md:w-5 md:h-5 text-amber-400 group-hover:scale-110 transition-transform" />
-                        Commander Profile
-                      </button>
+                        <button
+                          onClick={() => setShowCommanderProfile(true)}
+                          className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-amber-500/50 transition-all text-white/60 hover:text-white ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'} font-bold uppercase tracking-widest`}
+                        >
+                          <Shield className="w-4 h-4 md:w-5 md:h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+                          Commander Profile
+                        </button>
 
-                      <button
-                        onClick={() => {
-                          setCurrentMapConfig(CAMPAIGN_SECTORS[0].mapConfig);
-                          setGameMode(GameMode.TUTORIAL);
-                          setDifficulty(Difficulty.MEDIUM);
-                          setGold(500); // Give extra gold for training
-                          setLives(20);
-                          setWave(0);
-                          setInventory(EMPTY_INVENTORY);
-                          setBoughtTurrets(new Set([TurretType.BASIC]));
-                          setUnlockedTurrets(new Set([TurretType.BASIC]));
-                          setShowTutorial(true);
-                          setTutorialStep(0);
-                        }}
-                        className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-cyan-500/50 transition-all font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'}`}
-                      >
-                        <BookOpen className="w-4 h-4 md:w-5 md:h-5 text-cyan-400" />
-                        Training Protocol
-                      </button>
-                      
-                      <button
-                        onClick={() => setShowLibrary(true)}
-                        className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-emerald-500/50 transition-all font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'}`}
-                      >
-                        <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
-                        Database
-                      </button>
+                        <button
+                          onClick={() => {
+                            setCurrentMapConfig(CAMPAIGN_SECTORS[0].mapConfig);
+                            setGameMode(GameMode.TUTORIAL);
+                            setDifficulty(Difficulty.MEDIUM);
+                            setGold(500); // Give extra gold for training
+                            setLives(20);
+                            setWave(0);
+                            setInventory(EMPTY_INVENTORY);
+                            setBoughtTurrets(new Set([TurretType.BASIC]));
+                            setUnlockedTurrets(new Set([TurretType.BASIC]));
+                            setShowTutorial(true);
+                            setTutorialStep(0);
+                          }}
+                          className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-cyan-500/50 transition-all font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'}`}
+                        >
+                          <BookOpen className="w-4 h-4 md:w-5 md:h-5 text-cyan-400" />
+                          Training Protocol
+                        </button>
+                        
+                        <button
+                          onClick={() => setShowLibrary(true)}
+                          className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-emerald-500/50 transition-all font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'}`}
+                        >
+                          <Info className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
+                          Database
+                        </button>
 
-                      <button
-                        onClick={() => setShowSettings(true)}
-                        className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-purple-500/50 transition-all font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'}`}
-                      >
-                        <SettingsIcon className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
-                        Settings
-                      </button>
-                    </div>
+                        <button
+                          onClick={() => setShowSettings(true)}
+                          className={`group flex items-center justify-center gap-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-purple-500/50 transition-all font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-6 py-3 text-[10px]' : 'px-8 py-4 md:px-12 md:py-6 text-xs md:text-sm'}`}
+                        >
+                          <SettingsIcon className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
+                          Settings
+                        </button>
+                      </div>
                   </>
                 ) : showMapSelect ? (
                   <div className={`${isMobile && isLandscape ? 'max-w-2xl' : 'max-w-4xl'} mx-auto`}>
@@ -4636,11 +4615,14 @@ export default function App() {
                       </button>
                       <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight`}>Select Map</h2>
                       <button
-                        onClick={() => setShowEndlessLibrary(true)}
+                        onClick={() => {
+                          if (isSandboxEntry) setShowSandboxLibrary(true);
+                          else setShowEndlessLibrary(true);
+                        }}
                         className={`ml-4 flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-3 py-1.5 text-[8px]' : 'px-4 py-2 text-[10px]'}`}
                       >
                         <BookOpen className="w-3 h-3 md:w-4 md:h-4" />
-                        Library
+                        {isSandboxEntry ? 'Sandbox Library' : 'Endless Library'}
                       </button>
                     </div>
                     <div className={`grid gap-3 md:gap-4 ${isMobile && isLandscape ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
@@ -4763,8 +4745,18 @@ export default function App() {
                       </button>
                       <h2 className={`${isMobile && isLandscape ? 'text-lg' : 'text-xl md:text-3xl'} font-black uppercase italic tracking-tight`}>Game Difficulty</h2>
                       <button
-                        onClick={() => setShowLeaderboard(true)}
+                        onClick={() => {
+                          if (isSandboxEntry) setShowSandboxLibrary(true);
+                          else setShowEndlessLibrary(true);
+                        }}
                         className={`ml-4 flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-3 py-1.5 text-[8px]' : 'px-4 py-2 text-[10px]'}`}
+                      >
+                        <BookOpen className="w-3 h-3 md:w-4 md:h-4" />
+                        {isSandboxEntry ? 'Sandbox Library' : 'Endless Library'}
+                      </button>
+                      <button
+                        onClick={() => setShowLeaderboard(true)}
+                        className={`ml-2 flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl hover:bg-cyan-500/20 transition-all text-cyan-400 font-bold uppercase tracking-widest ${isMobile && isLandscape ? 'px-3 py-1.5 text-[8px]' : 'px-4 py-2 text-[10px]'}`}
                       >
                         <Globe className="w-3 h-3 md:w-4 md:h-4" />
                         Leaderboard
@@ -4990,7 +4982,7 @@ export default function App() {
                   initial={{ scale: 0.9, y: 20 }}
                   animate={{ scale: 1, y: 0 }}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-full max-w-2xl bg-[#050505] border border-amber-500/30 rounded-[2rem] flex flex-col relative overflow-hidden"
+                  className="w-full max-w-2xl bg-[#050505] border border-amber-500/30 rounded-[2rem] flex flex-col max-h-[90vh] relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500 to-transparent" />
                   
@@ -5012,7 +5004,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="p-6 md:p-10 space-y-8">
+                  <div className="p-6 md:p-10 space-y-8 overflow-y-auto custom-scrollbar">
                     {/* Nickname Section */}
                     <div className="space-y-4">
                       <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Commander Nickname</p>
@@ -5025,10 +5017,23 @@ export default function App() {
                           className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono focus:outline-none focus:border-amber-500/50 transition-colors"
                         />
                         <button
-                          onClick={() => saveProgress()}
-                          className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase italic rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-95"
+                          onClick={async () => {
+                            setSaveStatus('saving');
+                            await saveProgress();
+                            setSaveStatus('saved');
+                            setTimeout(() => setSaveStatus('idle'), 3000);
+                          }}
+                          disabled={saveStatus === 'saving'}
+                          className="px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-black uppercase italic rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-95 flex items-center gap-2"
                         >
-                          Save
+                          {saveStatus === 'saving' ? (
+                            <Activity className="w-4 h-4 animate-spin" />
+                          ) : saveStatus === 'saved' ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Save className="w-4 h-4" />
+                          )}
+                          {saveStatus === 'saved' ? 'Updated' : saveStatus === 'saving' ? 'Updating' : 'Update'}
                         </button>
                       </div>
                     </div>
@@ -5173,7 +5178,7 @@ export default function App() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
-                    {librarySessions.length === 0 ? (
+                    {endlessSessionsList.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-20 text-center">
                         <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6 border border-white/10">
                           <BookOpen className="w-10 h-10 text-white/20" />
@@ -5183,7 +5188,7 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        {librarySessions.map((session) => {
+                        {endlessSessionsList.map((session) => {
                           const mapName = CAMPAIGN_SECTORS.find(s => s.mapConfig.id === session.mapId)?.name || 'Unknown Sector';
                           return (
                             <div
@@ -5237,8 +5242,8 @@ export default function App() {
                               </div>
                               
                               <div className="mt-6 flex items-center justify-between">
-                                <div className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border ${session.type === 'sandbox' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'}`}>
-                                  {session.type === 'sandbox' ? 'Sandbox' : 'Endless'}
+                                <div className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
+                                  Endless
                                 </div>
                                 <div className="flex items-center gap-4">
                                   <button
@@ -5251,6 +5256,132 @@ export default function App() {
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                   <div className="flex items-center gap-2 text-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest">Resume Protocol</span>
+                                    <ChevronRight className="w-4 h-4" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Sandbox Library Modal */}
+          <AnimatePresence>
+            {showSandboxLibrary && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowSandboxLibrary(false)}
+                className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 md:p-8"
+              >
+                <motion.div
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-4xl bg-[#050505] border border-purple-500/30 rounded-[2rem] flex flex-col max-h-[90vh] relative overflow-hidden"
+                >
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500 to-transparent" />
+                  
+                  <div className="p-6 md:p-10 flex justify-between items-center border-b border-white/5">
+                    <div>
+                      <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter text-purple-400">Sandbox Library</h2>
+                      <p className="text-white/40 font-mono text-[9px] md:text-xs uppercase tracking-[0.3em] mt-1">Experimental Defense Logs</p>
+                    </div>
+                    <button 
+                      onClick={() => setShowSandboxLibrary(false)}
+                      className="p-2 md:p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors border border-white/10 group"
+                    >
+                      <X className="w-5 h-5 md:w-6 md:h-6 text-white/40 group-hover:text-purple-400" />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
+                    {sandboxSessionsList.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6 border border-white/10">
+                          <Cpu className="w-10 h-10 text-white/20" />
+                        </div>
+                        <h3 className="text-xl font-bold text-white/60 uppercase tracking-widest mb-2">Sandbox Empty</h3>
+                        <p className="text-white/30 text-sm max-w-xs">No experimental sessions found. Save your sandbox progress to see them here.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                        {sandboxSessionsList.map((session) => {
+                          const mapName = CAMPAIGN_SECTORS.find(s => s.mapConfig.id === session.mapId)?.name || 'Unknown Sector';
+                          return (
+                            <div
+                              key={session.id}
+                              onClick={() => loadSession(session)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  loadSession(session);
+                                }
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              className="group relative bg-white/5 border border-white/10 rounded-3xl p-6 hover:bg-white/10 hover:border-purple-500/50 transition-all text-left overflow-hidden cursor-pointer"
+                            >
+                              <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <Cpu className="w-24 h-24" />
+                              </div>
+                              
+                              <div className="flex justify-between items-start mb-4">
+                                <div className="px-3 py-1 bg-purple-500/20 rounded text-[10px] font-bold text-purple-400 uppercase tracking-widest border border-purple-500/30">
+                                  {session.difficulty}
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Last Active</p>
+                                  <p className="text-[10px] text-white/40 font-mono">{new Date(session.lastUpdated).toLocaleDateString()}</p>
+                                </div>
+                              </div>
+
+                              <h3 className="text-xl font-black uppercase italic tracking-tight text-white group-hover:text-purple-400 transition-colors mb-1">{mapName}</h3>
+                              <div className="flex items-center gap-2 mb-6">
+                                <p className="text-white/40 text-xs uppercase tracking-widest font-bold">Commander: {session.userName}</p>
+                                <div className="px-2 py-0.5 bg-amber-500/20 rounded text-[8px] font-bold text-amber-400 uppercase tracking-widest border border-amber-500/30">
+                                  LVL {session.commanderLevel || 1}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 border-t border-white/5 pt-6">
+                                <div>
+                                  <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Wave</p>
+                                  <p className="text-lg font-black text-purple-400 font-mono">{session.wave}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Gold</p>
+                                  <p className="text-lg font-black text-emerald-400 font-mono">{session.gold}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[8px] text-white/20 uppercase tracking-widest font-bold mb-1">Lives</p>
+                                  <p className="text-lg font-black text-rose-400 font-mono">{session.lives}</p>
+                                </div>
+                              </div>
+                              
+                              <div className="mt-6 flex items-center justify-between">
+                                <div className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border bg-purple-500/20 text-purple-400 border-purple-500/30">
+                                  Sandbox
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSessionToDelete({ id: session.mapId, type: session.type });
+                                    }}
+                                    className="p-2 text-white/20 hover:text-red-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                  <div className="flex items-center gap-2 text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <span className="text-[10px] font-bold uppercase tracking-widest">Resume Protocol</span>
                                     <ChevronRight className="w-4 h-4" />
                                   </div>
@@ -5935,9 +6066,29 @@ export default function App() {
                   <Shield className={`${isMobile && isLandscape ? 'w-6 h-6' : 'w-12 h-12'} text-red-500`} />
                 </div>
                 <h2 className={`font-black uppercase italic tracking-tighter mb-2 text-red-500 ${isMobile && isLandscape ? 'text-3xl' : 'text-6xl'}`}>System Failure</h2>
-                <p className="text-white/60 max-w-md mb-12 uppercase tracking-widest text-xs font-mono">
+                <p className="text-white/60 max-w-md mb-8 uppercase tracking-widest text-xs font-mono">
                   The perimeter has been breached. All units lost. Wave {wave} was your final stand.
                 </p>
+
+                {/* Run Stats */}
+                <div className="grid grid-cols-3 gap-4 w-full max-w-lg mb-12">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center justify-center">
+                    <Activity className="w-5 h-5 text-cyan-400 mb-2" />
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Wave</p>
+                    <p className="text-xl font-black text-white font-mono">{wave}</p>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center justify-center">
+                    <Skull className="w-5 h-5 text-rose-500 mb-2" />
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Kills</p>
+                    <p className="text-xl font-black text-white font-mono">{enemiesKilledThisRun}</p>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center justify-center">
+                    <Coins className="w-5 h-5 text-amber-400 mb-2" />
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Gold</p>
+                    <p className="text-xl font-black text-white font-mono">{goldEarnedThisRun}</p>
+                  </div>
+                </div>
+
                 <div className="flex flex-col gap-3 w-full max-w-xs">
                   <button
                     onClick={resetGame}
