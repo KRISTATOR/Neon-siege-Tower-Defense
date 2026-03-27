@@ -82,10 +82,10 @@ service cloud.firestore {
                       request.resource.data.userId == request.auth.uid &&
                       isValidCommunityMap(request.resource.data);
       allow update: if isAuthenticated() && 
-                      resource.data.userId == request.auth.uid &&
-                      request.resource.data.userId == request.auth.uid &&
+                      (resource.data.userId == request.auth.uid || isAdmin()) &&
+                      (request.resource.data.userId == resource.data.userId) &&
                       isValidCommunityMap(request.resource.data);
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     match /leaderboard/{userId} {
