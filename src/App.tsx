@@ -52,321 +52,63 @@ import {
   Check,
   Save
 } from 'lucide-react';
-import { db, auth } from './firebase';
-import { collection, addDoc, getDocs, query, orderBy, doc, setDoc, getDoc, onSnapshot, deleteDoc, limit } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
+
+// --- Imports from Modules ---
+import { GRID_SIZE } from './constants';
+import { Point, GameMode, EnemyType, TurretCategory, TurretType } from './types';
+import { Difficulty, DIFFICULTY_CONFIGS } from './data/difficulty';
+import { ACHIEVEMENTS } from './data/achievements';
+import { Turret } from './engine/Turret';
+import { TurretConfig, TURRET_CONFIGS, EMPTY_INVENTORY } from './data/turrets';
+import { Enemy } from './engine/Enemy';
+import { EnemyConfig, ENEMY_CONFIGS } from './data/enemies';
+import { 
+  MapConfig, 
+  Sector, 
+  DEFAULT_MAP, 
+  CAMPAIGN_SECTORS, 
+  getLayoutDifficulty 
+} from './data/maps';
+import { SoundManager } from './engine/SoundManager';
+import { db, auth, googleProvider } from './firebase/config';
+import { signIn, logOut, subscribeToAuthChanges, User } from './firebase/auth';
+import { updateLeaderboard, getLeaderboard, LeaderboardEntry } from './firebase/leaderboard';
+import { 
+  saveUserProgress, 
+  loadUserProgress, 
+  saveGameSession, 
+  getSessions, 
+  deleteGameSession,
+  ProgressData 
+} from './firebase/progress';
+import { LORE_MESSAGES, CAMPAIGN_LORE } from './data/lore';
+import { TECH_TREE_POSITIONS } from './data/techTree';
+import { updateGameLogic, GameRefs } from './engine/gameLoop';
+
+import { 
+  doc, 
+  onSnapshot, 
+  query, 
+  collection, 
+  orderBy, 
+  setDoc, 
+  deleteDoc, 
+  addDoc, 
+  getDocs 
+} from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from './firebase/utils';
+
+// --- Components ---
+import { Icon } from './components/Icon';
+import { TechNode } from './components/TechNode';
+import { Leaderboard } from './components/screens/Leaderboard';
+import { CommunityMaps } from './components/screens/CommunityMaps';
+import { Library } from './components/screens/Library';
+import { CommanderProfile } from './components/screens/CommanderProfile';
+import { Admin } from './components/screens/Admin';
+import LevelBuilder from './components/LevelBuilder';
 
 // --- Constants & Types ---
-
-const GRID_SIZE = 40;
-
-enum TurretType {
-  BASIC = 'BASIC',
-  SNIPER = 'SNIPER',
-  FROST = 'FROST',
-  GATLING = 'GATLING',
-  TESLA = 'TESLA',
-  MORTAR = 'MORTAR',
-  SONIC = 'SONIC',
-  BEAM = 'BEAM',
-  MISSILE = 'MISSILE',
-  VOID = 'VOID',
-  FLAME = 'FLAME',
-  SHOCK = 'SHOCK',
-  ORBITAL = 'ORBITAL',
-  GRAVITY = 'GRAVITY',
-  PLASMA = 'PLASMA'
-}
-
-const EMPTY_INVENTORY: Record<TurretType, number> = {
-  [TurretType.BASIC]: 0,
-  [TurretType.SNIPER]: 0,
-  [TurretType.FROST]: 0,
-  [TurretType.GATLING]: 0,
-  [TurretType.TESLA]: 0,
-  [TurretType.MORTAR]: 0,
-  [TurretType.SONIC]: 0,
-  [TurretType.BEAM]: 0,
-  [TurretType.MISSILE]: 0,
-  [TurretType.VOID]: 0,
-  [TurretType.FLAME]: 0,
-  [TurretType.SHOCK]: 0,
-  [TurretType.ORBITAL]: 0,
-  [TurretType.GRAVITY]: 0,
-  [TurretType.PLASMA]: 0,
-};
-
-enum TurretCategory {
-  SHORT_RANGE = 'Short Range',
-  MEDIUM_RANGE = 'Medium Range',
-  LONG_RANGE = 'Long Range',
-  LASERS = 'Lasers',
-  SLOWERS = 'Slowers'
-}
-
-enum Difficulty {
-  EASY = 'EASY',
-  MEDIUM = 'MEDIUM',
-  HARD = 'HARD'
-}
-
-enum GameMode {
-  START = 'START',
-  ENDLESS = 'ENDLESS',
-  CAMPAIGN = 'CAMPAIGN',
-  TUTORIAL = 'TUTORIAL',
-  SANDBOX = 'SANDBOX'
-}
-
-interface MapConfig {
-  id: string;
-  name: string;
-  paths: Point[][];
-  cols: number;
-  rows: number;
-  difficulty?: number;
-}
-
-interface Sector {
-  id: number;
-  name: string;
-  wavesToWin: number;
-  description: string;
-  mapConfig: MapConfig;
-}
-
-const DEFAULT_MAP: MapConfig = {
-  id: 'default',
-  name: 'Classic Grid',
-  cols: 20,
-  rows: 12,
-  paths: [[
-    { x: 0, y: 2 },
-    { x: 16, y: 2 },
-    { x: 16, y: 5 },
-    { x: 3, y: 5 },
-    { x: 3, y: 9 },
-    { x: 19, y: 9 },
-  ]]
-};
-
-const CAMPAIGN_SECTORS: Sector[] = [
-  { 
-    id: 0, 
-    name: "Training Grounds", 
-    wavesToWin: 3, 
-    description: "Learn the basics of defense in a controlled environment.", 
-    mapConfig: {
-      id: 'training',
-      name: 'Training Grounds',
-      cols: 12,
-      rows: 8,
-      paths: [[{ x: 0, y: 4 }, { x: 11, y: 4 }]],
-      difficulty: 1
-    }
-  },
-  { 
-    id: 1, 
-    name: "Neon Outskirts", 
-    wavesToWin: 5, 
-    description: "Secure the perimeter of the neon city.", 
-    mapConfig: {
-      id: 'sector-1',
-      name: 'Neon Outskirts',
-      cols: 15,
-      rows: 10,
-      paths: [[{ x: 0, y: 5 }, { x: 14, y: 5 }]],
-      difficulty: 1
-    }
-  },
-  { 
-    id: 2, 
-    name: "Data Hub Alpha", 
-    wavesToWin: 8, 
-    description: "Protect the central data processing unit.", 
-    mapConfig: {
-      id: 'sector-2',
-      name: 'Data Hub Alpha',
-      cols: 15,
-      rows: 10,
-      paths: [[{ x: 2, y: 0 }, { x: 2, y: 8 }, { x: 12, y: 8 }, { x: 12, y: 2 }]],
-      difficulty: 2
-    }
-  },
-  { 
-    id: 3, 
-    name: "Grid Sector 7", 
-    wavesToWin: 10, 
-    description: "A high-traffic zone requiring dense defenses.", 
-    mapConfig: {
-      id: 'sector-3',
-      name: 'Grid Sector 7',
-      cols: 18,
-      rows: 12,
-      paths: [[{ x: 0, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 2, y: 10 }, { x: 2, y: 6 }, { x: 17, y: 6 }]],
-      difficulty: 2
-    }
-  },
-  { 
-    id: 4, 
-    name: "Silicon Valley", 
-    wavesToWin: 12, 
-    description: "Defend the core manufacturing plants.", 
-    mapConfig: {
-      id: 'sector-4',
-      name: 'Silicon Valley',
-      cols: 20,
-      rows: 12,
-      paths: [[{ x: 10, y: 0 }, { x: 10, y: 11 }, { x: 2, y: 11 }, { x: 2, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 9 }, { x: 5, y: 9 }]],
-      difficulty: 3
-    }
-  },
-  { 
-    id: 5, 
-    name: "The Firewall", 
-    wavesToWin: 15, 
-    description: "A narrow pass with intense enemy waves.", 
-    mapConfig: {
-      id: 'sector-5',
-      name: 'The Firewall',
-      cols: 25,
-      rows: 8,
-      paths: [[{ x: 0, y: 4 }, { x: 24, y: 4 }]],
-      difficulty: 3
-    }
-  },
-  { 
-    id: 6, 
-    name: "Cyber Port", 
-    wavesToWin: 18, 
-    description: "Secure the main shipping docks.", 
-    mapConfig: {
-      id: 'sector-6',
-      name: 'Cyber Port',
-      cols: 20,
-      rows: 15,
-      paths: [[{ x: 0, y: 2 }, { x: 18, y: 2 }, { x: 18, y: 13 }, { x: 2, y: 13 }, { x: 2, y: 7 }, { x: 19, y: 7 }]],
-      difficulty: 3
-    }
-  },
-  { 
-    id: 7, 
-    name: "Neural Link", 
-    wavesToWin: 20, 
-    description: "Protect the global communication uplink.", 
-    mapConfig: {
-      id: 'sector-7',
-      name: 'Neural Link',
-      cols: 22,
-      rows: 14,
-      paths: [[{ x: 0, y: 0 }, { x: 21, y: 13 }]],
-      difficulty: 4
-    }
-  },
-  { 
-    id: 8, 
-    name: "The Void Gate", 
-    wavesToWin: 25, 
-    description: "Hold back the entities from the dark net.", 
-    mapConfig: {
-      id: 'sector-8',
-      name: 'The Void Gate',
-      cols: 20,
-      rows: 12,
-      paths: [[{ x: 0, y: 6 }, { x: 5, y: 6 }, { x: 5, y: 2 }, { x: 15, y: 2 }, { x: 15, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 5 }, { x: 19, y: 5 }]],
-      difficulty: 4
-    }
-  },
-  { 
-    id: 9, 
-    name: "Mainframe Core", 
-    wavesToWin: 30, 
-    description: "The heart of the system is under attack.", 
-    mapConfig: {
-      id: 'sector-9',
-      name: 'Mainframe Core',
-      cols: 24,
-      rows: 16,
-      paths: [[{ x: 12, y: 0 }, { x: 12, y: 15 }, { x: 0, y: 15 }, { x: 0, y: 0 }, { x: 23, y: 0 }, { x: 23, y: 15 }]],
-      difficulty: 4
-    }
-  },
-  { 
-    id: 10, 
-    name: "Singularity", 
-    wavesToWin: 50, 
-    description: "The final stand against the ultimate virus. Enemies approach from all directions.", 
-    mapConfig: {
-      id: 'sector-10',
-      name: 'Singularity',
-      cols: 26,
-      rows: 18,
-      paths: [
-        // North entrance
-        [{ x: 13, y: 0 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
-        // South entrance
-        [{ x: 13, y: 17 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
-        // West entrance
-        [{ x: 0, y: 9 }, { x: 13, y: 9 }, { x: 25, y: 9 }],
-        // East entrance (alternative)
-        [{ x: 0, y: 2 }, { x: 24, y: 2 }, { x: 24, y: 16 }, { x: 2, y: 16 }, { x: 2, y: 9 }, { x: 25, y: 9 }]
-      ],
-      difficulty: 5
-    }
-  },
-  {
-    id: 11,
-    name: "The Crossroads",
-    wavesToWin: 20,
-    description: "Two paths intersect at a critical junction.",
-    mapConfig: {
-      id: 'sector-11',
-      name: 'The Crossroads',
-      cols: 20,
-      rows: 12,
-      paths: [
-        [{ x: 0, y: 6 }, { x: 19, y: 6 }],
-        [{ x: 10, y: 0 }, { x: 10, y: 11 }]
-      ],
-      difficulty: 3
-    }
-  },
-  {
-    id: 12,
-    name: "Triple Threat",
-    wavesToWin: 25,
-    description: "Three separate data streams converge on the core.",
-    mapConfig: {
-      id: 'sector-12',
-      name: 'Triple Threat',
-      cols: 22,
-      rows: 14,
-      paths: [
-        [{ x: 0, y: 2 }, { x: 11, y: 2 }, { x: 11, y: 13 }],
-        [{ x: 0, y: 11 }, { x: 11, y: 11 }, { x: 11, y: 13 }],
-        [{ x: 21, y: 6 }, { x: 11, y: 6 }, { x: 11, y: 13 }]
-      ],
-      difficulty: 4
-    }
-  },
-  {
-    id: 13,
-    name: "The Gauntlet",
-    wavesToWin: 30,
-    description: "Two parallel paths test your ability to manage multiple fronts.",
-    mapConfig: {
-      id: 'sector-13',
-      name: 'The Gauntlet',
-      cols: 24,
-      rows: 16,
-      paths: [
-        [{ x: 0, y: 4 }, { x: 23, y: 4 }],
-        [{ x: 0, y: 11 }, { x: 23, y: 11 }]
-      ],
-      difficulty: 4
-    }
-  }
-];
 
 const getTurretDepth = (type: TurretType): number => {
   const config = TURRET_CONFIGS[type];
@@ -374,2069 +116,7 @@ const getTurretDepth = (type: TurretType): number => {
   return 1 + Math.max(...config.prerequisites.map(getTurretDepth));
 };
 
-const getLayoutDifficulty = (map: MapConfig): number => {
-  if (map.difficulty) return map.difficulty;
-  
-  // Base difficulty from number of entrances
-  if (map.paths.length >= 4) return 5;
-  if (map.paths.length === 3) return 4;
-  if (map.paths.length === 2) return 3;
-  
-  // For single path maps, look at complexity (number of points)
-  // Fewer points usually means more direct/faster paths
-  const points = map.paths[0].length;
-  if (points <= 3) return 2;
-  return 1;
-};
-
-interface DifficultyConfig {
-  gold: number;
-  lives: number;
-  scaling: number;
-}
-
-const DIFFICULTY_CONFIGS: Record<Difficulty, DifficultyConfig> = {
-  [Difficulty.EASY]: { gold: 300, lives: 30, scaling: 1.05 },
-  [Difficulty.MEDIUM]: { gold: 200, lives: 15, scaling: 1.15 },
-  [Difficulty.HARD]: { gold: 100, lives: 10, scaling: 1.3 }
-};
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface TurretConfig {
-  type: TurretType;
-  category: TurretCategory;
-  name: string;
-  cost: number;
-  unlockCost: number;
-  upgradeUnlockCost: number;
-  upgradeCost: number;
-  range: number; // in grid units
-  damage: number;
-  fireRate: number; // seconds between shots
-  color: string;
-  icon: React.ReactNode;
-  description: string;
-  isAOE?: boolean;
-  isContinuous?: boolean;
-  prerequisites: TurretType[];
-  report: {
-    origin: string;
-    tech: string;
-    pros: string[];
-    cons: string[];
-  };
-}
-
-const TURRET_CONFIGS: Record<TurretType, TurretConfig> = {
-  [TurretType.BASIC]: {
-    type: TurretType.BASIC,
-    category: TurretCategory.SHORT_RANGE,
-    name: 'Pulse Laser',
-    cost: 15,
-    unlockCost: 0,
-    upgradeUnlockCost: 50,
-    upgradeCost: 20,
-    range: 3,
-    damage: 15,
-    fireRate: 0.4,
-    color: '#00f2ff',
-    icon: <Zap className="w-4 h-4" />,
-    description: 'Fast firing, low damage.',
-    prerequisites: [],
-    report: {
-      origin: 'Early Grid Defense Division',
-      tech: 'Coherent Light Amplification',
-      pros: ['High reliability', 'Low energy cost'],
-      cons: ['Low armor penetration', 'Limited range']
-    }
-  },
-  [TurretType.SNIPER]: {
-    type: TurretType.SNIPER,
-    category: TurretCategory.LONG_RANGE,
-    name: 'Railgun',
-    cost: 30,
-    unlockCost: 75,
-    upgradeUnlockCost: 100,
-    upgradeCost: 40,
-    range: 7,
-    damage: 100,
-    fireRate: 2.0,
-    color: '#ff00ff',
-    icon: <Target className="w-4 h-4" />,
-    description: 'Long range, massive damage.',
-    prerequisites: [TurretType.BASIC],
-    report: {
-      origin: 'Deep Space Security',
-      tech: 'Electromagnetic Acceleration',
-      pros: ['Extreme range', 'One-shot potential'],
-      cons: ['Slow recharge', 'Inefficient vs swarms']
-    }
-  },
-  [TurretType.FROST]: {
-    type: TurretType.FROST,
-    category: TurretCategory.SLOWERS,
-    name: 'Cryo Beam',
-    cost: 25,
-    unlockCost: 60,
-    upgradeUnlockCost: 80,
-    upgradeCost: 30,
-    range: 4,
-    damage: 5,
-    fireRate: 0.8,
-    color: '#00ff88',
-    icon: <Snowflake className="w-4 h-4" />,
-    description: 'Slows enemies by 50%.',
-    prerequisites: [TurretType.BASIC],
-    report: {
-      origin: 'Arctic Containment Unit',
-      tech: 'Endothermic Particle Stream',
-      pros: ['Crowd control', 'Strategic utility'],
-      cons: ['Minimal damage', 'Requires support']
-    }
-  },
-  [TurretType.GATLING]: {
-    type: TurretType.GATLING,
-    category: TurretCategory.SHORT_RANGE,
-    name: 'Gatling Gun',
-    cost: 30,
-    unlockCost: 70,
-    upgradeUnlockCost: 90,
-    upgradeCost: 35,
-    range: 3.5,
-    damage: 8,
-    fireRate: 0.1,
-    color: '#fbbf24',
-    icon: <Activity className="w-4 h-4" />,
-    description: 'Extreme fire rate.',
-    prerequisites: [TurretType.BASIC],
-    report: {
-      origin: 'Frontier Outpost 9',
-      tech: 'Multi-barrel Kinetic System',
-      pros: ['High DPS', 'Effective vs swarms'],
-      cons: ['Short range', 'High ammo consumption']
-    }
-  },
-  [TurretType.TESLA]: {
-    type: TurretType.TESLA,
-    category: TurretCategory.SHORT_RANGE,
-    name: 'Tesla Coil',
-    cost: 45,
-    unlockCost: 140,
-    upgradeUnlockCost: 180,
-    upgradeCost: 60,
-    range: 3.5,
-    damage: 40,
-    fireRate: 1.2,
-    color: '#a855f7',
-    icon: <Zap className="w-4 h-4" />,
-    description: 'High damage electrical discharge.',
-    prerequisites: [TurretType.SNIPER],
-    report: {
-      origin: 'Power Grid R&D',
-      tech: 'High-Voltage Arc Induction',
-      pros: ['High burst damage', 'Ignores some shielding'],
-      cons: ['Erratic targeting', 'High power draw']
-    }
-  },
-  [TurretType.MORTAR]: {
-    type: TurretType.MORTAR,
-    category: TurretCategory.MEDIUM_RANGE,
-    name: 'Plasma Mortar',
-    cost: 60,
-    unlockCost: 170,
-    upgradeUnlockCost: 220,
-    upgradeCost: 80,
-    range: 5,
-    damage: 60,
-    fireRate: 2.5,
-    color: '#f97316',
-    icon: <Flame className="w-4 h-4" />,
-    description: 'Hits multiple targets.',
-    isAOE: true,
-    prerequisites: [TurretType.FROST],
-    report: {
-      origin: 'Heavy Ordnance Division',
-      tech: 'Encapsulated Plasma Shells',
-      pros: ['Area of Effect', 'High impact'],
-      cons: ['Slow projectile', 'Minimum range limit']
-    }
-  },
-  [TurretType.SONIC]: {
-    type: TurretType.SONIC,
-    category: TurretCategory.SLOWERS,
-    name: 'Sonic Pulse',
-    cost: 75,
-    unlockCost: 230,
-    upgradeUnlockCost: 300,
-    upgradeCost: 100,
-    range: 4,
-    damage: 10,
-    fireRate: 1.5,
-    color: '#60a5fa',
-    icon: <Radio className="w-4 h-4" />,
-    description: 'AOE slow and damage.',
-    isAOE: true,
-    prerequisites: [TurretType.MORTAR],
-    report: {
-      origin: 'Acoustic Research Lab',
-      tech: 'Low-Frequency Resonance',
-      pros: ['Massive crowd control', 'Disrupts formations'],
-      cons: ['Long cooldown', 'Low direct damage']
-    }
-  },
-  [TurretType.BEAM]: {
-    type: TurretType.BEAM,
-    category: TurretCategory.LASERS,
-    name: 'Prism Beam',
-    cost: 90,
-    unlockCost: 300,
-    upgradeUnlockCost: 400,
-    upgradeCost: 120,
-    range: 4.5,
-    damage: 2,
-    fireRate: 0.016,
-    color: '#ec4899',
-    icon: <Wind className="w-4 h-4" />,
-    description: 'Continuous damage beam.',
-    isContinuous: true,
-    prerequisites: [TurretType.TESLA],
-    report: {
-      origin: 'Orbital Strike Command',
-      tech: 'Focused Photon Stream',
-      pros: ['Constant damage', 'Perfect accuracy'],
-      cons: ['Single target only', 'High heat generation']
-    }
-  },
-  [TurretType.MISSILE]: {
-    type: TurretType.MISSILE,
-    category: TurretCategory.LONG_RANGE,
-    name: 'Missile Battery',
-    cost: 100,
-    unlockCost: 350,
-    upgradeUnlockCost: 450,
-    upgradeCost: 150,
-    range: 8,
-    damage: 120,
-    fireRate: 3.0,
-    color: '#ef4444',
-    icon: <Target className="w-4 h-4" />,
-    description: 'Long range AOE missiles.',
-    isAOE: true,
-    prerequisites: [TurretType.SNIPER],
-    report: {
-      origin: 'Global Defense Initiative',
-      tech: 'Autonomous Homing Warheads',
-      pros: ['Extreme range', 'Splash damage'],
-      cons: ['Slow travel time', 'Vulnerable to decoys']
-    }
-  },
-  [TurretType.VOID]: {
-    type: TurretType.VOID,
-    category: TurretCategory.LONG_RANGE,
-    name: 'Void Hole',
-    cost: 180,
-    unlockCost: 600,
-    upgradeUnlockCost: 800,
-    upgradeCost: 250,
-    range: 4,
-    damage: 500,
-    fireRate: 5.0,
-    color: '#ffffff',
-    icon: <Skull className="w-4 h-4" />,
-    description: 'Extreme damage, very slow.',
-    prerequisites: [TurretType.BEAM],
-    report: {
-      origin: 'Unknown / Dark Net',
-      tech: 'Singularity Generation',
-      pros: ['Unmatched damage', 'Annihilates bosses'],
-      cons: ['Extremely slow', 'Massive cost']
-    }
-  },
-  [TurretType.FLAME]: {
-    type: TurretType.FLAME,
-    category: TurretCategory.SHORT_RANGE,
-    name: 'Inferno',
-    cost: 40,
-    unlockCost: 120,
-    upgradeUnlockCost: 150,
-    upgradeCost: 50,
-    range: 2.5,
-    damage: 12,
-    fireRate: 0.1,
-    color: '#f87171',
-    icon: <Flame className="w-4 h-4" />,
-    description: 'Short range AOE fire.',
-    isAOE: true,
-    prerequisites: [TurretType.BASIC],
-    report: {
-      origin: 'Hazardous Waste Disposal',
-      tech: 'Superheated Napalm Spray',
-      pros: ['Melts swarms', 'Lingering damage'],
-      cons: ['Very short range', 'Ineffective vs armor']
-    }
-  },
-  [TurretType.SHOCK]: {
-    type: TurretType.SHOCK,
-    category: TurretCategory.SHORT_RANGE,
-    name: 'Shock Wave',
-    cost: 50,
-    unlockCost: 150,
-    upgradeUnlockCost: 200,
-    upgradeCost: 70,
-    range: 3,
-    damage: 20,
-    fireRate: 1.0,
-    color: '#60a5fa',
-    icon: <Zap className="w-4 h-4" />,
-    description: 'Stuns and damages nearby enemies.',
-    isAOE: true,
-    prerequisites: [TurretType.TESLA],
-    report: {
-      origin: 'Riot Control Systems',
-      tech: 'Kinetic-Electric Pulse',
-      pros: ['Stuns enemies', '360 degree coverage'],
-      cons: ['Short range', 'Low fire rate']
-    }
-  },
-  [TurretType.ORBITAL]: {
-    type: TurretType.ORBITAL,
-    category: TurretCategory.LONG_RANGE,
-    name: 'Orbital Strike',
-    cost: 250,
-    unlockCost: 1000,
-    upgradeUnlockCost: 1200,
-    upgradeCost: 400,
-    range: 10,
-    damage: 2000,
-    fireRate: 10.0,
-    color: '#fbbf24',
-    icon: <Target className="w-4 h-4" />,
-    description: 'Devastating orbital laser.',
-    isAOE: true,
-    prerequisites: [TurretType.VOID],
-    report: {
-      origin: 'High Command Satellite',
-      tech: 'Kinetic Bombardment',
-      pros: ['Infinite range', 'Absolute destruction'],
-      cons: ['Longest reload', 'Prohibitive cost']
-    }
-  },
-  [TurretType.GRAVITY]: {
-    type: TurretType.GRAVITY,
-    category: TurretCategory.SLOWERS,
-    name: 'Gravity Well',
-    cost: 120,
-    unlockCost: 400,
-    upgradeUnlockCost: 500,
-    upgradeCost: 150,
-    range: 5,
-    damage: 5,
-    fireRate: 0.5,
-    color: '#818cf8',
-    icon: <Wind className="w-4 h-4" />,
-    description: 'Extreme slow in a large area.',
-    isAOE: true,
-    prerequisites: [TurretType.SONIC],
-    report: {
-      origin: 'Singularity Research Lab',
-      tech: 'Localized Spacetime Distortion',
-      pros: ['Massive AOE slow', 'Pulls enemies together'],
-      cons: ['High energy drain', 'Minimal damage']
-    }
-  },
-  [TurretType.PLASMA]: {
-    type: TurretType.PLASMA,
-    category: TurretCategory.MEDIUM_RANGE,
-    name: 'Plasma Cannon',
-    cost: 80,
-    unlockCost: 250,
-    upgradeUnlockCost: 350,
-    upgradeCost: 100,
-    range: 5.5,
-    damage: 80,
-    fireRate: 1.8,
-    color: '#4ade80',
-    icon: <Zap className="w-4 h-4" />,
-    description: 'Powerful plasma projectiles.',
-    prerequisites: [TurretType.MORTAR],
-    report: {
-      origin: 'Advanced Energy Division',
-      tech: 'Superheated Ionized Gas',
-      pros: ['High armor penetration', 'Splash damage'],
-      cons: ['Slow projectile speed', 'Medium fire rate']
-    }
-  }
-};
-
-const LORE_MESSAGES: Record<number, string> = {
-  0: "Welcome to the Neon Perimeter, Commander. The Grid is under siege by digital entities from the Void. We've authorized basic Pulse Laser tech for your defense. Hold the line at all costs.",
-  1: "First contact confirmed. They are weak, but numerous. Use the gold from their destruction to build more defenses.",
-  3: "The entities are beginning to resonate. Our scanners show a 20% increase in structural integrity. You'll need to sniper them from a distance or slow them down.",
-  5: "Intelligence reports suggest the swarm is adapting. They are moving faster now. Ensure your perimeter is tight.",
-  7: "Thermal signatures are rising. The swarm is deploying heavy-plated units. It's time to research the Plasma Mortar or high-voltage Tesla Coils.",
-  10: "We're losing ground in the outer sectors. The pressure is mounting. Upgrade your arsenal or be consumed.",
-  12: "The Void is thinning. We're detecting massive energy signatures. The Prism Beam and Missile Batteries are now critical for our survival.",
-  15: "The core is vibrating at a dangerous frequency. We need more firepower. The Void Hole technology is our last hope.",
-  20: "This is it. The final resonance. The core stability is failing. If we don't stop them here, the entire Grid collapses into the Void. Good luck, Commander."
-};
-
-const CAMPAIGN_LORE: Record<number, string> = {
-  0: "Welcome to the Training Grounds, Commander. Here you will learn the basics of grid defense. Establish a perimeter and neutralize the test viruses. Pulse Laser tech is online.",
-  1: "The Neon Outskirts are being probed. This is just the beginning. We need to establish a perimeter before they reach the inner hubs. Secure the city limits.",
-  2: "Data Hub Alpha is under threat. If they breach this node, our communication lines will be severed. Hold them back while we secure the archives.",
-  3: "Grid Sector 7 is a high-traffic junction. The entities are using it to bypass our main firewalls. We must turn this transit zone into a graveyard.",
-  4: "Silicon Valley—the heart of our manufacturing. If the core plants fall, we lose our ability to produce advanced turret components. Defend the assembly lines.",
-  5: "The Firewall is our strongest linear defense, but it's being hammered by a concentrated swarm. This is a battle of attrition. Don't let a single bit leak.",
-  6: "Cyber Port is the gateway for our off-world resources. The entities are trying to block our supply chains. Keep the docks clear at all costs.",
-  7: "Neural Link is the backbone of the global mind. A breach here means total cognitive collapse for the citizens. The stakes have never been higher.",
-  8: "The Void Gate has opened. They are no longer just probing; they are invading from the dark net itself. This sector is the thin line between us and oblivion.",
-  9: "Mainframe Core is the brain of the entire Grid. They've bypassed almost all our defenses. If this falls, the war is over. Give them everything you've got.",
-  10: "Singularity. The ultimate virus has manifested. It's trying to rewrite the laws of our reality. This is the final stand. For the Grid, for the Future!"
-};
-
-const TECH_TREE_POSITIONS: Record<TurretType, { x: number; y: number }> = {
-  [TurretType.BASIC]: { x: 0, y: 0 },
-  [TurretType.GATLING]: { x: 350, y: -225 },
-  [TurretType.SNIPER]: { x: 350, y: -75 },
-  [TurretType.FROST]: { x: 350, y: 75 },
-  [TurretType.FLAME]: { x: 350, y: 225 },
-  [TurretType.TESLA]: { x: 700, y: -150 },
-  [TurretType.MISSILE]: { x: 700, y: 0 },
-  [TurretType.MORTAR]: { x: 700, y: 150 },
-  [TurretType.BEAM]: { x: 1050, y: -225 },
-  [TurretType.SHOCK]: { x: 1050, y: -75 },
-  [TurretType.SONIC]: { x: 1050, y: 75 },
-  [TurretType.PLASMA]: { x: 1050, y: 225 },
-  [TurretType.VOID]: { x: 1400, y: -75 },
-  [TurretType.GRAVITY]: { x: 1400, y: 75 },
-  [TurretType.ORBITAL]: { x: 1750, y: 0 },
-};
-
-// --- Sound Manager (Web Audio API) ---
-const SoundManager = {
-  audioCtx: null as AudioContext | null,
-  bgmSource: null as AudioBufferSourceNode | null,
-  isMuted: false,
-
-  toggleMute() {
-    this.isMuted = !this.isMuted;
-    if (this.isMuted) {
-      if (this.bgmSource) {
-        this.bgmSource.stop();
-        this.bgmSource = null;
-      }
-    } else {
-      this.playBGM();
-    }
-  },
-
-  init() {
-    if (!this.audioCtx) {
-      this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-  },
-
-  playSynth(freq: number, type: OscillatorType = 'sine', duration: number = 0.1, volume: number = 0.1) {
-    if (this.isMuted) return;
-    this.init();
-    if (this.audioCtx!.state === 'suspended') {
-      this.audioCtx!.resume();
-    }
-    const osc = this.audioCtx!.createOscillator();
-    const gain = this.audioCtx!.createGain();
-    
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, this.audioCtx!.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.1, this.audioCtx!.currentTime + duration);
-    
-    gain.gain.setValueAtTime(volume, this.audioCtx!.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, this.audioCtx!.currentTime + duration);
-    
-    osc.connect(gain);
-    gain.connect(this.audioCtx!.destination);
-    
-    osc.start();
-    osc.stop(this.audioCtx!.currentTime + duration);
-  },
-
-  playBGM() {
-    if (this.isMuted) return;
-    this.init();
-    if (this.bgmSource) return;
-    if (this.audioCtx!.state === 'suspended') {
-      this.audioCtx!.resume();
-    }
-
-    const duration = 2; // 2 seconds loop
-    const sampleRate = this.audioCtx!.sampleRate;
-    const buffer = this.audioCtx!.createBuffer(1, sampleRate * duration, sampleRate);
-    const data = buffer.getChannelData(0);
-    
-    for (let i = 0; i < data.length; i++) {
-      const t = i / sampleRate;
-      // Simple rhythmic pulse
-      const pulse = Math.sin(2 * Math.PI * 40 * t) * 0.1;
-      const beat = (i % (sampleRate / 2) < 1000) ? 0.05 : 0;
-      data[i] = pulse + beat;
-    }
-
-    this.bgmSource = this.audioCtx!.createBufferSource();
-    this.bgmSource.buffer = buffer;
-    this.bgmSource.loop = true;
-    const gain = this.audioCtx!.createGain();
-    gain.gain.value = 0.05;
-    this.bgmSource.connect(gain);
-    gain.connect(this.audioCtx!.destination);
-    this.bgmSource.start();
-  },
-
-  playZap() { this.playSynth(800, 'square', 0.05, 0.03); },
-  playThud() { this.playSynth(150, 'sine', 0.3, 0.1); },
-  playBuy() { this.playSynth(1200, 'triangle', 0.2, 0.1); },
-  playPlace() { this.playSynth(400, 'sine', 0.1, 0.1); },
-  playDelete() { this.playSynth(200, 'sawtooth', 0.2, 0.1); },
-  playDeath() { this.playSynth(100, 'square', 0.4, 0.05); },
-  playWaveStart() { this.playSynth(600, 'sine', 0.8, 0.1); },
-  playVictory() { 
-    this.playSynth(800, 'sine', 0.2, 0.1);
-    setTimeout(() => this.playSynth(1000, 'sine', 0.2, 0.1), 100);
-    setTimeout(() => this.playSynth(1200, 'sine', 0.4, 0.1), 200);
-  }
-};
-
-// --- Game Logic Classes ---
-
-enum EnemyType {
-  SQUARE = 'SQUARE',
-  HEXAGON = 'HEXAGON',
-  CIRCLE = 'CIRCLE',
-  STAR = 'STAR'
-}
-
-interface EnemyConfig {
-  type: EnemyType;
-  name: string;
-  description: string;
-  color: string;
-  icon: React.ReactNode;
-  report: {
-    threatLevel: 'Low' | 'Medium' | 'High' | 'Extreme';
-    behavior: string;
-    weakness: string;
-    data: string;
-  };
-}
-
-const ACHIEVEMENTS = [
-  { id: 'first_contact', name: 'First Contact', description: 'Survive your first wave.', isSecret: false },
-  { id: 'campaign_hero', name: 'Campaign Hero', description: 'Secure all 11 sectors of the campaign.', isSecret: false },
-  { id: 'endless_survivor', name: 'Endless Survivor', description: 'Reach wave 50 in Endless Mode.', isSecret: false },
-  { id: 'tech_specialist', name: 'Tech Specialist', description: 'Unlock all available turret types.', isSecret: false },
-  { id: 'rich_commander', name: 'Rich Commander', description: 'Accumulate 5,000 gold in a single session.', isSecret: true },
-  { id: 'close_call', name: 'Close Call', description: 'Survive a wave with only 1 integrity point remaining.', isSecret: true },
-  { id: 'archivist', name: 'Archivist', description: 'Save 10 sessions to the Endless Library.', isSecret: false },
-  { id: 'centurion', name: 'Centurion', description: 'Reach wave 100 in Endless Mode.', isSecret: false },
-  { id: 'grid_master', name: 'Grid Master', description: 'Unlock all campaign sectors.', isSecret: false },
-];
-
-const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
-  [EnemyType.SQUARE]: {
-    type: EnemyType.SQUARE,
-    name: 'Basic Virus',
-    description: 'Standard hostile entity.',
-    color: '#ef4444',
-    icon: <Square className="w-4 h-4" />,
-    report: {
-      threatLevel: 'Low',
-      behavior: 'Predictable linear movement.',
-      weakness: 'Pulse Lasers and Gatling Guns.',
-      data: 'The most common form of system corruption. Easily dispatched but dangerous in large numbers.'
-    }
-  },
-  [EnemyType.HEXAGON]: {
-    type: EnemyType.HEXAGON,
-    name: 'Armored Worm',
-    description: 'High health, slow movement.',
-    color: '#f59e0b',
-    icon: <Hexagon className="w-4 h-4" />,
-    report: {
-      threatLevel: 'Medium',
-      behavior: 'Slow but relentless advance.',
-      weakness: 'Railguns and Plasma Mortars.',
-      data: 'Encased in a hardened data shell. Requires concentrated fire or high-impact weaponry to breach.'
-    }
-  },
-  [EnemyType.CIRCLE]: {
-    type: EnemyType.CIRCLE,
-    name: 'Speed Glitch',
-    description: 'Fast but fragile.',
-    color: '#3b82f6',
-    icon: <Circle className="w-4 h-4" />,
-    report: {
-      threatLevel: 'High',
-      behavior: 'Rapid erratic movement.',
-      weakness: 'Cryo Beams and Tesla Coils.',
-      data: 'A temporal anomaly in the grid. Its high speed makes it difficult for slow-firing turrets to track.'
-    }
-  },
-  [EnemyType.STAR]: {
-    type: EnemyType.STAR,
-    name: 'System Overlord',
-    description: 'A massive star-shaped boss entity.',
-    color: '#f43f5e',
-    icon: <Star className="w-4 h-4" />,
-    report: {
-      threatLevel: 'Extreme',
-      behavior: 'Slow, heavy, and extremely durable.',
-      weakness: 'Concentrated fire from all available turrets.',
-      data: 'The System Overlord is the ultimate manifestation of the grid\'s corruption. It only appears when the system is under extreme stress, acting as a final safeguard for the virus. Its star-shaped geometry is designed to deflect standard pulse fire, requiring overwhelming force to neutralize.'
-    }
-  }
-};
-
-class Enemy {
-  id: string;
-  x: number;
-  y: number;
-  hp: number;
-  maxHp: number;
-  speed: number;
-  type: EnemyType;
-  pathIndex: number = 0;
-  progress: number = 0; // Distance along current segment
-  totalDistance: number = 0; // Total distance traveled
-  isDead: boolean = false;
-  isLeaked: boolean = false;
-  slowTimer: number = 0;
-
-  path: Point[];
-
-  constructor(hp: number, speed: number, type: EnemyType = EnemyType.SQUARE, path: Point[]) {
-    this.id = Math.random().toString(36).substr(2, 9);
-    this.path = path;
-    this.x = this.path[0].x * GRID_SIZE;
-    this.y = this.path[0].y * GRID_SIZE;
-    this.type = type;
-    
-    // Adjust stats based on type
-    let hpMult = 1;
-    let speedMult = 1;
-    
-    if (type === EnemyType.HEXAGON) {
-      hpMult = 3;
-      speedMult = 0.5;
-    } else if (type === EnemyType.CIRCLE) {
-      hpMult = 0.5;
-      speedMult = 2;
-    } else if (type === EnemyType.STAR) {
-      hpMult = 20;
-      speedMult = 0.4;
-    }
-    
-    this.maxHp = hp * hpMult;
-    this.hp = this.maxHp;
-    this.speed = speed * speedMult;
-  }
-
-  update(deltaTime: number) {
-    if (this.slowTimer > 0) {
-      this.slowTimer -= deltaTime;
-    }
-
-    const currentSpeed = this.slowTimer > 0 ? this.speed * 0.5 : this.speed;
-    const moveDist = currentSpeed * (deltaTime / 16.67) * 2; // Normalize to ~60fps
-
-    if (this.pathIndex < this.path.length - 1) {
-      const start = this.path[this.pathIndex];
-      const end = this.path[this.pathIndex + 1];
-      
-      const dx = (end.x - start.x) * GRID_SIZE;
-      const dy = (end.y - start.y) * GRID_SIZE;
-      const segmentLen = Math.sqrt(dx * dx + dy * dy);
-      
-      this.progress += moveDist;
-      this.totalDistance += moveDist;
-
-      if (this.progress >= segmentLen) {
-        this.progress -= segmentLen;
-        this.pathIndex++;
-        if (this.pathIndex >= this.path.length - 1) {
-          this.isLeaked = true;
-          return;
-        }
-      }
-
-      const ratio = this.progress / segmentLen;
-      const nextStart = this.path[this.pathIndex];
-      const nextEnd = this.path[this.pathIndex + 1];
-      this.x = nextStart.x * GRID_SIZE + (nextEnd.x - nextStart.x) * GRID_SIZE * ratio;
-      this.y = nextStart.y * GRID_SIZE + (nextEnd.y - nextStart.y) * GRID_SIZE * ratio;
-    } else {
-      this.isLeaked = true;
-    }
-  }
-
-  draw(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = this.slowTimer > 0 ? '#4ade80' : 
-                    this.type === EnemyType.HEXAGON ? '#f59e0b' :
-                    this.type === EnemyType.CIRCLE ? '#3b82f6' : 
-                    this.type === EnemyType.STAR ? '#f43f5e' : '#ef4444';
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = ctx.fillStyle;
-    
-    const size = this.type === EnemyType.HEXAGON ? 24 : 
-                 this.type === EnemyType.CIRCLE ? 16 : 
-                 this.type === EnemyType.STAR ? 40 : 20;
-    
-    if (this.type === EnemyType.SQUARE) {
-      ctx.fillRect(this.x - size/2, this.y - size/2, size, size);
-    } else if (this.type === EnemyType.CIRCLE) {
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, size/2, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (this.type === EnemyType.HEXAGON) {
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const angle = (i * Math.PI) / 3;
-        const x = this.x + (size / 2) * Math.cos(angle);
-        const y = this.y + (size / 2) * Math.sin(angle);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.fill();
-    } else if (this.type === EnemyType.STAR) {
-      ctx.beginPath();
-      const spikes = 5;
-      const outerRadius = size / 2;
-      const innerRadius = size / 4;
-      let rot = Math.PI / 2 * 3;
-      let x = this.x;
-      let y = this.y;
-      const step = Math.PI / spikes;
-
-      ctx.moveTo(this.x, this.y - outerRadius);
-      for (let i = 0; i < spikes; i++) {
-        x = this.x + Math.cos(rot) * outerRadius;
-        y = this.y + Math.sin(rot) * outerRadius;
-        ctx.lineTo(x, y);
-        rot += step;
-
-        x = this.x + Math.cos(rot) * innerRadius;
-        y = this.y + Math.sin(rot) * innerRadius;
-        ctx.lineTo(x, y);
-        rot += step;
-      }
-      ctx.lineTo(this.x, this.y - outerRadius);
-      ctx.closePath();
-      ctx.fill();
-    }
-    
-    // HP Bar
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#333';
-    ctx.fillRect(this.x - size/2 - 5, this.y - size/2 - 10, size + 10, 4);
-    ctx.fillStyle = this.type === EnemyType.HEXAGON ? '#f59e0b' : 
-                    this.type === EnemyType.STAR ? '#f43f5e' : '#ef4444';
-    ctx.fillRect(this.x - size/2 - 5, this.y - size/2 - 10, (size + 10) * (this.hp / this.maxHp), 4);
-  }
-}
-
-class Turret {
-  id: string;
-  x: number;
-  y: number;
-  config: TurretConfig;
-  lastShot: number = 0;
-  target: Enemy | null = null;
-  level: number = 1;
-  maxLevel: number = 3;
-  angle: number = 0;
-  targetAngle: number = 0;
-  lastTargetPos: { x: number, y: number } | null = null;
-  lastUpgradeTime: number = 0;
-
-  constructor(gridX: number, gridY: number, type: TurretType) {
-    this.id = Math.random().toString(36).substr(2, 9);
-    this.x = gridX * GRID_SIZE + GRID_SIZE / 2;
-    this.y = gridY * GRID_SIZE + GRID_SIZE / 2;
-    this.config = TURRET_CONFIGS[type];
-  }
-
-  get damage() {
-    return this.config.damage * (1 + (this.level - 1) * 0.5);
-  }
-
-  get range() {
-    return this.config.range * (1 + (this.level - 1) * 0.15);
-  }
-
-  get fireRate() {
-    // Lower is faster
-    return this.config.fireRate * Math.pow(0.85, this.level - 1);
-  }
-
-  update(enemies: Enemy[], currentTime: number, deltaTime: number) {
-    // Targeting: Furthest enemy in range
-    let bestTarget: Enemy | null = null;
-    let maxDist = -1;
-
-    for (const enemy of enemies) {
-      const dx = enemy.x - this.x;
-      const dy = enemy.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist <= this.range * GRID_SIZE) {
-        if (enemy.totalDistance > maxDist) {
-          maxDist = enemy.totalDistance;
-          bestTarget = enemy;
-        }
-      }
-    }
-
-    this.target = bestTarget;
-
-    // Update rotation
-    if (this.target) {
-      this.targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-    }
-
-    // Smooth rotation
-    let angleDiff = this.targetAngle - this.angle;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    this.angle += angleDiff * 0.15 * (deltaTime / 16.67);
-
-    if (this.target && currentTime - this.lastShot >= this.fireRate * 1000) {
-      this.lastTargetPos = { x: this.target.x, y: this.target.y };
-      this.shoot(enemies);
-      this.lastShot = currentTime;
-    }
-  }
-
-  shoot(enemies: Enemy[]) {
-    if (!this.target) return;
-    
-    SoundManager.playZap();
-    
-    if (this.config.isAOE) {
-      // AOE Damage
-      enemies.forEach(enemy => {
-        const dx = enemy.x - this.target!.x;
-        const dy = enemy.y - this.target!.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 60) { // AOE Radius
-          enemy.hp -= this.damage;
-          if (enemy.hp <= 0) enemy.isDead = true;
-        }
-      });
-    } else {
-      // Single Target
-      this.target.hp -= this.damage;
-      if (this.target.hp <= 0) {
-        this.target.isDead = true;
-      }
-    }
-    
-    if (this.config.type === TurretType.FROST) {
-      this.target.slowTimer = 2000; // 2 seconds slow
-    }
-  }
-
-  draw(ctx: CanvasRenderingContext2D, currentTime: number, isSelected: boolean = false) {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-
-    // Draw Range (Only if selected)
-    if (isSelected) {
-      ctx.beginPath();
-      ctx.arc(0, 0, this.range * GRID_SIZE, 0, Math.PI * 2);
-      ctx.strokeStyle = `${this.config.color}44`;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = `${this.config.color}11`;
-      ctx.fill();
-    }
-
-    // Rotate towards target
-    ctx.rotate(this.angle);
-
-    // Upgrade Animation (Scale Pop)
-    const upgradeElapsed = currentTime - this.lastUpgradeTime;
-    let upgradeScale = 1;
-    let barrelOffset = 0;
-    if (upgradeElapsed < 600) {
-      const t = upgradeElapsed / 600;
-      // Scale pop
-      upgradeScale = 1 + Math.sin(t * Math.PI) * 0.2 * (1 - t);
-      // Barrel extension/retraction
-      barrelOffset = Math.sin(t * Math.PI * 2) * 3 * (1 - t);
-      
-      // Extra glow during upgrade
-      ctx.shadowBlur = 20 + Math.sin(t * Math.PI) * 20;
-      ctx.shadowColor = '#fff';
-    }
-    ctx.scale(upgradeScale, upgradeScale);
-
-    // Highlight if selected
-    if (isSelected) {
-      ctx.shadowBlur = 25;
-      ctx.shadowColor = '#fff';
-      ctx.fillStyle = '#fff'; // Signal selection with white
-    } else if (upgradeElapsed >= 600) {
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = this.config.color;
-      ctx.fillStyle = this.config.color; // Use original unique color
-    } else {
-      ctx.fillStyle = this.config.color;
-    }
-
-    if (this.level === 1) {
-      // Level 1: Sleek Triangle
-      ctx.beginPath();
-      ctx.moveTo(12 + barrelOffset, 0);
-      ctx.lineTo(-8, -8);
-      ctx.lineTo(-8, 8);
-      ctx.closePath();
-      ctx.fill();
-      
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    } else if (this.level === 2) {
-      // Level 2: Twin Barrels
-      ctx.beginPath();
-      ctx.moveTo(15, 0);
-      ctx.lineTo(-10, -12);
-      ctx.lineTo(-10, 12);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Barrels
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = this.config.color;
-      ctx.beginPath();
-      ctx.moveTo(0, -8);
-      ctx.lineTo(18 + barrelOffset, -8);
-      ctx.moveTo(0, 8);
-      ctx.lineTo(18 + barrelOffset, 8);
-      ctx.stroke();
-
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    } else if (this.level === 3) {
-      // Level 3: Heavy Chassis + Triple Barrel
-      // Chassis
-      ctx.beginPath();
-      ctx.moveTo(18, 0);
-      ctx.lineTo(-12, -16);
-      ctx.lineTo(-12, 16);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Barrels (Triple)
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = this.config.color;
-      ctx.beginPath();
-      ctx.moveTo(-5, -12);
-      ctx.lineTo(18 + barrelOffset, -12);
-      ctx.moveTo(-5, 12);
-      ctx.lineTo(18 + barrelOffset, 12);
-      ctx.moveTo(5, 0);
-      ctx.lineTo(20 + barrelOffset, 0);
-      ctx.stroke();
-      
-      // Core
-      const pulse = Math.sin(currentTime / 200) * 1.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, 6 + pulse, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff';
-      ctx.fill();
-      
-      // Detail lines
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-
-    const tipOffset = this.level === 1 ? 12 : this.level === 2 ? 18 : 20;
-
-    // Continuous Beam
-    if (this.config.isContinuous && this.target) {
-      const dx = this.target.x - this.x;
-      const dy = this.target.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      ctx.beginPath();
-      ctx.moveTo(tipOffset, 0);
-      ctx.lineTo(dist, 0);
-      ctx.strokeStyle = this.config.color;
-      ctx.lineWidth = 3 + (this.level - 1) * 2;
-      ctx.shadowBlur = 15;
-      ctx.stroke();
-      
-      // Beam core
-      ctx.beginPath();
-      ctx.moveTo(tipOffset, 0);
-      ctx.lineTo(dist, 0);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1 + (this.level - 1);
-      ctx.stroke();
-    }
-
-    // Muzzle Flash and Attack Visuals
-    if (!this.config.isContinuous && currentTime - this.lastShot < 150) {
-      const progress = (currentTime - this.lastShot) / 150;
-      
-      // Muzzle Flash
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(tipOffset, 0);
-      ctx.lineTo(tipOffset + 10, -5);
-      ctx.lineTo(tipOffset + 10, 5);
-      ctx.closePath();
-      ctx.fillStyle = '#fff';
-      ctx.fill();
-      ctx.restore();
-
-      // Attack Visuals based on type
-      if (this.lastTargetPos) {
-        const tx = this.lastTargetPos.x - this.x;
-        const ty = this.lastTargetPos.y - this.y;
-        
-        ctx.restore(); // Exit local turret space
-        ctx.save(); // Re-save for global space effects
-        
-        const dist = Math.sqrt(tx * tx + ty * ty);
-        const angle = Math.atan2(ty, tx);
-
-        switch (this.config.type) {
-          case TurretType.BASIC:
-          case TurretType.GATLING:
-            // Fast tracer
-            ctx.beginPath();
-            ctx.moveTo(this.x + Math.cos(angle) * tipOffset, this.y + Math.sin(angle) * tipOffset);
-            ctx.lineTo(this.x + Math.cos(angle) * (tipOffset + dist * progress), this.y + Math.sin(angle) * (tipOffset + dist * progress));
-            ctx.strokeStyle = this.config.color;
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            break;
-
-          case TurretType.SNIPER:
-            // Long thin beam
-            ctx.beginPath();
-            ctx.moveTo(this.x + Math.cos(angle) * tipOffset, this.y + Math.sin(angle) * tipOffset);
-            ctx.lineTo(this.lastTargetPos.x, this.lastTargetPos.y);
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1;
-            ctx.globalAlpha = 1 - progress;
-            ctx.stroke();
-            ctx.strokeStyle = this.config.color;
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            break;
-
-          case TurretType.TESLA:
-            // Lightning bolt
-            ctx.beginPath();
-            ctx.moveTo(this.x + Math.cos(angle) * tipOffset, this.y + Math.sin(angle) * tipOffset);
-            let curX = this.x + Math.cos(angle) * tipOffset;
-            let curY = this.y + Math.sin(angle) * tipOffset;
-            const segments = 5;
-            for (let i = 1; i <= segments; i++) {
-              const targetX = this.x + Math.cos(angle) * (tipOffset + (dist * i / segments));
-              const targetY = this.y + Math.sin(angle) * (tipOffset + (dist * i / segments));
-              curX = targetX + (Math.random() - 0.5) * 20;
-              curY = targetY + (Math.random() - 0.5) * 20;
-              ctx.lineTo(curX, curY);
-            }
-            ctx.lineTo(this.lastTargetPos.x, this.lastTargetPos.y);
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = this.config.color;
-            ctx.stroke();
-            break;
-
-          case TurretType.MORTAR:
-          case TurretType.PLASMA:
-          case TurretType.MISSILE:
-            // Projectile / Impact
-            const radius = progress * 40;
-            ctx.beginPath();
-            ctx.arc(this.lastTargetPos.x, this.lastTargetPos.y, radius, 0, Math.PI * 2);
-            ctx.strokeStyle = this.config.color;
-            ctx.lineWidth = 2;
-            ctx.globalAlpha = 1 - progress;
-            ctx.stroke();
-            ctx.fillStyle = `${this.config.color}33`;
-            ctx.fill();
-            break;
-
-          case TurretType.SONIC:
-          case TurretType.SHOCK:
-          case TurretType.GRAVITY:
-            // Expanding rings
-            for (let i = 0; i < 3; i++) {
-              const r = ((progress + i/3) % 1) * 60;
-              ctx.beginPath();
-              ctx.arc(this.lastTargetPos.x, this.lastTargetPos.y, r, 0, Math.PI * 2);
-              ctx.strokeStyle = this.config.color;
-              ctx.lineWidth = 2;
-              ctx.globalAlpha = 1 - ((progress + i/3) % 1);
-              ctx.stroke();
-            }
-            break;
-
-          case TurretType.FLAME:
-            // Flame cone
-            ctx.beginPath();
-            ctx.moveTo(this.x + Math.cos(angle) * tipOffset, this.y + Math.sin(angle) * tipOffset);
-            const coneAngle = 0.4;
-            ctx.lineTo(this.x + Math.cos(angle - coneAngle) * dist * progress, this.y + Math.sin(angle - coneAngle) * dist * progress);
-            ctx.lineTo(this.x + Math.cos(angle + coneAngle) * dist * progress, this.y + Math.sin(angle + coneAngle) * dist * progress);
-            ctx.closePath();
-            ctx.fillStyle = `rgba(248, 113, 113, ${0.5 * (1 - progress)})`;
-            ctx.fill();
-            break;
-
-          case TurretType.ORBITAL:
-            // Massive vertical beam
-            ctx.beginPath();
-            ctx.moveTo(this.lastTargetPos.x, 0);
-            ctx.lineTo(this.lastTargetPos.x, ctx.canvas.height);
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 20 * (1 - progress);
-            ctx.shadowBlur = 30;
-            ctx.shadowColor = this.config.color;
-            ctx.stroke();
-            break;
-
-          case TurretType.VOID:
-            // Dark implosion
-            ctx.beginPath();
-            ctx.arc(this.lastTargetPos.x, this.lastTargetPos.y, (1 - progress) * 50, 0, Math.PI * 2);
-            ctx.fillStyle = '#fff';
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = '#fff';
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(this.lastTargetPos.x, this.lastTargetPos.y, (1 - progress) * 30, 0, Math.PI * 2);
-            ctx.fillStyle = '#000';
-            ctx.fill();
-            break;
-
-          case TurretType.FROST:
-            // Frosty blast
-            ctx.beginPath();
-            ctx.moveTo(this.x + Math.cos(angle) * tipOffset, this.y + Math.sin(angle) * tipOffset);
-            ctx.lineTo(this.lastTargetPos.x, this.lastTargetPos.y);
-            ctx.strokeStyle = this.config.color;
-            ctx.lineWidth = 4;
-            ctx.setLineDash([5, 5]);
-            ctx.lineDashOffset = -currentTime / 10;
-            ctx.stroke();
-            break;
-        }
-        
-        ctx.restore();
-        ctx.save(); // Re-enter local space for the final restore in the original code
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-      }
-    }
-
-    ctx.restore();
-  }
-}
-
-// --- Helper Components ---
-
-interface TechNodeProps {
-  type: TurretType;
-  unlockedTurrets: Set<TurretType>;
-  unlockedUpgrades: Set<TurretType>;
-  gold: number;
-  onUnlock: (type: TurretType) => void;
-  x: number;
-  y: number;
-}
-
-const TechNode: React.FC<TechNodeProps> = ({ type, unlockedTurrets, unlockedUpgrades, gold, onUnlock, x, y }) => {
-  const config = TURRET_CONFIGS[type];
-  const isUnlocked = unlockedTurrets.has(type);
-  const isUpgradeUnlocked = unlockedUpgrades.has(type);
-  const canAfford = gold >= config.unlockCost;
-  const hasPrereqs = config.prerequisites.length === 0 || config.prerequisites.every(p => unlockedTurrets.has(p));
-
-  return (
-    <button
-      onClick={() => onUnlock(type)}
-      disabled={(!isUnlocked && (!hasPrereqs)) || (isUnlocked && isUpgradeUnlocked)}
-      style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
-      className={`
-        absolute group rounded-xl border flex items-center transition-all w-64 h-20 z-10 overflow-hidden
-        ${isUnlocked 
-          ? isUpgradeUnlocked
-            ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.1)]'
-            : 'bg-emerald-500/10 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
-          : hasPrereqs
-            ? canAfford 
-              ? 'bg-white/5 border-white/10 hover:border-cyan-500/50 hover:bg-white/10'
-              : 'bg-white/5 border-white/10 opacity-60'
-            : 'bg-black/20 border-white/5 opacity-20 grayscale'}
-      `}
-    >
-      {/* Icon Section */}
-      <div className="w-16 h-full flex items-center justify-center bg-black/40 border-r border-white/10" style={{ color: config.color }}>
-        {config.icon}
-      </div>
-      
-      {/* Content Section */}
-      <div className="flex-1 px-4 text-left">
-        <h4 className="text-xs font-bold uppercase tracking-tight text-white truncate">{config.name}</h4>
-        <div className="flex items-center gap-2 mt-1">
-          {isUnlocked ? (
-            <div className="flex items-center gap-1 text-[9px] text-emerald-400 uppercase font-bold">
-              <Shield className="w-2.5 h-2.5" />
-              Complete
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 text-[9px] text-white/40 uppercase font-bold">
-              {hasPrereqs ? (
-                <span className="text-yellow-400">{config.unlockCost}G</span>
-              ) : (
-                <Lock className="w-2.5 h-2.5" />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Status indicator */}
-      <div className="absolute top-2 right-2">
-        {isUnlocked ? (
-           <div className="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50">
-             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-           </div>
-        ) : !hasPrereqs && (
-           <Lock className="w-3 h-3 text-white/20" />
-        )}
-      </div>
-    </button>
-  );
-};
-
 // --- Main Component ---
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-};
-
-// --- Level Builder Component ---
-interface LevelBuilderProps {
-  onClose: () => void;
-  user: User | null;
-}
-
-const LevelBuilder: React.FC<LevelBuilderProps> = ({ onClose, user }) => {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [cols, setCols] = useState(20);
-  const [rows, setRows] = useState(12);
-  const [grid, setGrid] = useState<number[]>(new Array(20 * 12).fill(0)); // 0: buildable, 1: path, 2: spawn, 3: goal
-  const [selectedTool, setSelectedTool] = useState<number>(1);
-  const [isUploading, setIsUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [connectionStart, setConnectionStart] = useState<number | null>(null);
-  const [selectedSpawnIndex, setSelectedSpawnIndex] = useState<number | null>(null);
-  const [spawnPaths, setSpawnPaths] = useState<Record<number, { path: Point[], goalIndex: number }[]>>({});
-
-  const [currentEnemyPaths, setCurrentEnemyPaths] = useState<Point[][]>([]);
-
-  useEffect(() => {
-    if (selectedSpawnIndex !== null && spawnPaths[selectedSpawnIndex]) {
-      setCurrentEnemyPaths(spawnPaths[selectedSpawnIndex].map(sp => sp.path));
-    } else {
-      setCurrentEnemyPaths([]);
-    }
-  }, [selectedSpawnIndex, spawnPaths]);
-
-  const generatePaths = (startIdx: number, endIdx: number) => {
-    const start = { x: startIdx % cols, y: Math.floor(startIdx / cols) };
-    const end = { x: endIdx % cols, y: Math.floor(endIdx / cols) };
-
-    const paths: Point[][] = [];
-    const xDir = end.x >= start.x ? 1 : -1;
-    const yDir = end.y >= start.y ? 1 : -1;
-
-    // Path 1: Horizontal then Vertical
-    const p1: Point[] = [];
-    for (let x = start.x; x !== end.x + xDir; x += xDir) {
-      p1.push({ x, y: start.y });
-    }
-    for (let y = start.y + yDir; y !== end.y + yDir; y += yDir) {
-      p1.push({ x: end.x, y });
-    }
-    paths.push(p1);
-
-    // Path 2: Vertical then Horizontal
-    if (start.x !== end.x && start.y !== end.y) {
-      const p2: Point[] = [];
-      for (let y = start.y; y !== end.y + yDir; y += yDir) {
-        p2.push({ x: start.x, y });
-      }
-      for (let x = start.x + xDir; x !== end.x + xDir; x += xDir) {
-        p2.push({ x, y: end.y });
-      }
-      paths.push(p2);
-    }
-
-    return paths;
-  };
-
-  const applyPathToGrid = (path: Point[], targetGrid: number[]) => {
-    // Clear existing paths (1) but keep spawn (2) and goal (3)
-    for (let i = 0; i < targetGrid.length; i++) {
-      if (targetGrid[i] === 1) targetGrid[i] = 0;
-    }
-    // Apply all paths from all spawns
-    (Object.values(spawnPaths) as { path: Point[], goalIndex: number }[]).forEach(sp => {
-      sp.path.forEach(pt => {
-        const idx = pt.y * cols + pt.x;
-        if (targetGrid[idx] === 0) targetGrid[idx] = 1;
-      });
-    });
-    // Apply the new path
-    path.forEach(p => {
-      const idx = p.y * cols + p.x;
-      if (targetGrid[idx] === 0) targetGrid[idx] = 1;
-    });
-  };
-
-  const findPathThroughGrid = (startIdx: number, endIdx: number, mustPassThrough?: number) => {
-    const start = { x: startIdx % cols, y: Math.floor(startIdx / cols) };
-    const end = { x: endIdx % cols, y: Math.floor(endIdx / cols) };
-    
-    const getShortest = (s: Point, e: Point) => {
-      const queue: { pos: Point, path: Point[] }[] = [{ pos: s, path: [s] }];
-      const visited = new Set<string>();
-      visited.add(`${s.x},${s.y}`);
-
-      while (queue.length > 0) {
-        const { pos, path } = queue.shift()!;
-        if (pos.x === e.x && pos.y === e.y) return path;
-
-        const neighbors = [
-          { x: pos.x + 1, y: pos.y }, { x: pos.x - 1, y: pos.y },
-          { x: pos.x, y: pos.y + 1 }, { x: pos.x, y: pos.y - 1 },
-        ];
-
-        for (const n of neighbors) {
-          const idx = n.y * cols + n.x;
-          if (n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && 
-              (grid[idx] === 1 || grid[idx] === 3 || idx === startIdx || idx === endIdx) && 
-              !visited.has(`${n.x},${n.y}`)) {
-            visited.add(`${n.x},${n.y}`);
-            queue.push({ pos: n, path: [...path, n] });
-          }
-        }
-      }
-      return null;
-    };
-
-    if (mustPassThrough !== undefined) {
-      const mid = { x: mustPassThrough % cols, y: Math.floor(mustPassThrough / cols) };
-      const p1 = getShortest(start, mid);
-      const p2 = getShortest(mid, end);
-      if (p1 && p2) {
-        return [...p1, ...p2.slice(1)];
-      }
-      return null;
-    }
-
-    return getShortest(start, end);
-  };
-
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragMode, setDragMode] = useState<'paint' | 'erase' | null>(null);
-
-  const handleCellAction = (index: number, isDrag: boolean = false) => {
-    const newGrid = [...grid];
-    setError(null);
-
-    // If clicking a spawn, select it (only on click, not drag)
-    if (!isDrag && grid[index] === 2) {
-      setSelectedSpawnIndex(index);
-      setConnectionStart(index);
-      return;
-    }
-
-    // Auto-pathing logic (only on click, not drag)
-    if (!isDrag && selectedTool === 1) {
-      const cellType = grid[index];
-      
-      // If a spawn is selected and we click a PATH cell (type 1), try to re-route
-      if (selectedSpawnIndex !== null && cellType === 1) {
-        const currentPaths = spawnPaths[selectedSpawnIndex] || [];
-        let updated = false;
-        const newSpawnPaths = { ...spawnPaths };
-        const updatedPaths = [...currentPaths];
-
-        for (let i = 0; i < updatedPaths.length; i++) {
-          const goalIdx = updatedPaths[i].goalIndex;
-          const newPath = findPathThroughGrid(selectedSpawnIndex, goalIdx, index);
-          if (newPath) {
-            updatedPaths[i] = { ...updatedPaths[i], path: newPath };
-            updated = true;
-            break; // Just update the first one that can be re-routed
-          }
-        }
-
-        if (updated) {
-          newSpawnPaths[selectedSpawnIndex] = updatedPaths;
-          setSpawnPaths(newSpawnPaths);
-          return;
-        }
-      }
-
-      if (cellType === 3) { // Goal
-        if (selectedSpawnIndex !== null) {
-          const existingPathIdx = (spawnPaths[selectedSpawnIndex] || []).findIndex(p => p.goalIndex === index);
-          
-          if (existingPathIdx !== -1) {
-            const newPaths = spawnPaths[selectedSpawnIndex].filter(p => p.goalIndex !== index);
-            const newSpawnPaths = { ...spawnPaths, [selectedSpawnIndex]: newPaths };
-            if (newPaths.length === 0) delete newSpawnPaths[selectedSpawnIndex];
-            setSpawnPaths(newSpawnPaths);
-          } else {
-            const path = findPathThroughGrid(selectedSpawnIndex, index);
-            if (path) {
-              const newPaths = [...(spawnPaths[selectedSpawnIndex] || []), { path, goalIndex: index }];
-              setSpawnPaths({ ...spawnPaths, [selectedSpawnIndex]: newPaths });
-            } else {
-              setError("No path found through painted cells! Paint a path first.");
-            }
-          }
-          return;
-        }
-      }
-    }
-
-    if (!isDrag) setConnectionStart(null);
-
-    const currentType = grid[index];
-    const targetType = selectedTool;
-
-    // Brush logic
-    if (isDrag) {
-      if (dragMode === 'paint') {
-        if (currentType === 0) newGrid[index] = targetType;
-      } else if (dragMode === 'erase') {
-        if (currentType === targetType) newGrid[index] = 0;
-      }
-    } else {
-      // Toggle logic for single click
-      if (currentType === targetType) {
-        newGrid[index] = 0;
-      } else {
-        newGrid[index] = targetType;
-      }
-    }
-
-    // If grid changed, handle side effects
-    if (newGrid[index] !== grid[index]) {
-      if (grid[index] === 1 || newGrid[index] === 1) {
-        // If a path cell is modified, re-validate all paths
-        const newSpawnPaths = { ...spawnPaths };
-        let changed = false;
-        Object.keys(newSpawnPaths).forEach(spawnIdxKey => {
-          const spawnIdx = Number(spawnIdxKey);
-          const updatedPaths = newSpawnPaths[spawnIdx].map(sp => {
-            // Check if current path still works
-            const stillValid = sp.path.every(pt => {
-              const pIdx = pt.y * cols + pt.x;
-              // Path is valid if cell is still path (1), or is the spawn/goal itself
-              return pIdx === spawnIdx || pIdx === sp.goalIndex || (newGrid[pIdx] === 1);
-            });
-            if (stillValid) return sp;
-            // Try to find a new path
-            const newPath = findPathThroughGrid(spawnIdx, sp.goalIndex);
-            return newPath ? { ...sp, path: newPath } : null;
-          }).filter((p): p is { path: Point[], goalIndex: number } => p !== null);
-          
-          if (updatedPaths.length !== newSpawnPaths[spawnIdx].length || 
-              JSON.stringify(updatedPaths) !== JSON.stringify(newSpawnPaths[spawnIdx])) {
-            newSpawnPaths[spawnIdx] = updatedPaths;
-            if (updatedPaths.length === 0) delete newSpawnPaths[spawnIdx];
-            changed = true;
-          }
-        });
-        if (changed) setSpawnPaths(newSpawnPaths);
-      }
-
-      if (grid[index] === 2) {
-        const newSpawnPaths = { ...spawnPaths };
-        delete newSpawnPaths[index];
-        setSpawnPaths(newSpawnPaths);
-        if (selectedSpawnIndex === index) setSelectedSpawnIndex(null);
-      }
-
-      if (grid[index] === 3) {
-        const newSpawnPaths = { ...spawnPaths };
-        let changed = false;
-        Object.keys(newSpawnPaths).forEach(spawnIdxKey => {
-          const spawnIdx = Number(spawnIdxKey);
-          const filtered = newSpawnPaths[spawnIdx].filter(p => p.goalIndex !== index);
-          if (filtered.length !== newSpawnPaths[spawnIdx].length) {
-            newSpawnPaths[spawnIdx] = filtered;
-            if (filtered.length === 0) delete newSpawnPaths[spawnIdx];
-            changed = true;
-          }
-        });
-        if (changed) setSpawnPaths(newSpawnPaths);
-      }
-
-      setGrid(newGrid);
-    }
-  };
-
-  const handleMouseDown = (index: number) => {
-    setIsDragging(true);
-    const mode = grid[index] === selectedTool ? 'erase' : 'paint';
-    setDragMode(mode);
-    handleCellAction(index);
-  };
-
-  const handleMouseEnter = (index: number) => {
-    if (isDragging) {
-      handleCellAction(index, true);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    setDragMode(null);
-  };
-
-  const handleUpload = async () => {
-    if (!user) return;
-    if (!name.trim()) { setError('Please name your map.'); return; }
-    
-    const allPaths = (Object.values(spawnPaths) as { path: Point[], goalIndex: number }[][]).flatMap(pathsArr => pathsArr.map(sp => sp.path));
-    if (allPaths.length === 0) { setError('Please connect at least one Spawn to a Goal!'); return; }
-
-    setIsUploading(true);
-    try {
-      await addDoc(collection(db, 'community_maps'), {
-        userId: user.uid,
-        userName: user.displayName || 'Anonymous',
-        name,
-        description,
-        cols,
-        rows,
-        grid,
-        paths: allPaths,
-        createdAt: new Date().toISOString(),
-        likes: 0,
-        plays: 0
-      });
-      onClose();
-    } catch (err) {
-      console.error(err);
-      setError('Failed to upload map.');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
-    >
-      <div 
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full"
-      >
-        <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
-              <MapIcon className="w-6 h-6 text-cyan-400" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Level Builder</h2>
-              <p className="text-xs text-white/40 font-bold uppercase tracking-widest">Design and Share Community Maps</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-2xl transition-colors">
-            <X className="w-6 h-6 text-white/40" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col md:flex-row gap-8">
-          {/* Editor Grid */}
-          <div className="flex-1 flex flex-col gap-4">
-            <div className="relative self-start">
-              <div 
-                className="grid gap-px bg-white/5 border border-white/10 rounded-xl overflow-hidden"
-                style={{ 
-                  gridTemplateColumns: `repeat(${cols}, 1fr)`,
-                  width: 'fit-content'
-                }}
-                onMouseLeave={handleMouseUp}
-              >
-                {grid.map((cell, i) => (
-                  <button
-                    key={i}
-                    onMouseDown={() => handleMouseDown(i)}
-                    onMouseEnter={() => handleMouseEnter(i)}
-                    onMouseUp={handleMouseUp}
-                    className={`w-6 h-6 md:w-8 md:h-8 transition-colors relative ${
-                      cell === 1 ? 'bg-white/20' : 
-                      cell === 2 ? 'bg-emerald-500/50' : 
-                      cell === 3 ? 'bg-rose-500/50' : 
-                      'bg-black/40 hover:bg-white/5'
-                    } ${connectionStart === i || selectedSpawnIndex === i ? 'ring-2 ring-cyan-500 ring-inset' : ''}`}
-                  >
-                    {(connectionStart === i || selectedSpawnIndex === i) && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-1 h-1 bg-cyan-500 rounded-full animate-ping" />
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-              
-              {currentEnemyPaths.length > 0 && (
-                <svg 
-                  className="absolute inset-0 pointer-events-none" 
-                  viewBox={`0 0 ${cols} ${rows}`}
-                  preserveAspectRatio="none"
-                >
-                  {currentEnemyPaths.map((path, idx) => (
-                    <polyline
-                      key={idx}
-                      points={path.map(p => `${p.x + 0.5},${p.y + 0.5}`).join(' ')}
-                      fill="none"
-                      stroke="rgba(6, 182, 212, 0.8)"
-                      strokeWidth="0.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeDasharray="0.3 0.3"
-                      className="animate-[dash_2s_linear_infinite]"
-                    />
-                  ))}
-                  <style>{`
-                    @keyframes dash {
-                      to { stroke-dashoffset: -0.6; }
-                    }
-                  `}</style>
-                </svg>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3 items-center">
-              {[
-                { id: 1, name: 'Path', icon: <Activity className="w-4 h-4" />, color: 'bg-white/20' },
-                { id: 2, name: 'Spawn', icon: <Play className="w-4 h-4" />, color: 'bg-emerald-500/50' },
-                { id: 3, name: 'Goal', icon: <Target className="w-4 h-4" />, color: 'bg-rose-500/50' },
-              ].map(tool => (
-                <button
-                  key={tool.id}
-                  onClick={() => {
-                    setSelectedTool(tool.id);
-                    setConnectionStart(null);
-                  }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all uppercase tracking-widest font-bold text-[10px] ${
-                    selectedTool === tool.id ? 'bg-white/10 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-white/40'
-                  }`}
-                >
-                  <div className={`w-3 h-3 rounded-sm ${tool.color}`} />
-                  {tool.name}
-                </button>
-              ))}
-            </div>
-            {selectedTool === 1 && (
-              <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold">
-                Tip: Click a Spawn to select it, then click Goals to connect. Click painted path cells to re-route connections.
-              </p>
-            )}
-          </div>
-
-          {/* Metadata Form */}
-          <div className="w-full md:w-80 flex flex-col gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Map Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter map name..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Annotation / Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Write a short description..."
-                rows={4}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 transition-colors resize-none"
-              />
-            </div>
-
-            {error && (
-              <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs font-bold">
-                {error}
-              </div>
-            )}
-
-            <button
-              onClick={handleUpload}
-              disabled={isUploading || !user}
-              className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-black uppercase tracking-widest py-4 rounded-2xl transition-all shadow-[0_0_30px_rgba(6,182,212,0.3)] flex items-center justify-center gap-2"
-            >
-              {isUploading ? (
-                <Activity className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  <Upload className="w-5 h-5" />
-                  Publish Map
-                </>
-              )}
-            </button>
-            {!user && <p className="text-[9px] text-rose-400 text-center font-bold uppercase tracking-widest">Sign in to publish maps</p>}
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-// --- Leaderboard Component ---
-interface LeaderboardProps {
-  onClose: () => void;
-  currentUserId?: string;
-}
-
-const Leaderboard: React.FC<LeaderboardProps> = ({ onClose, currentUserId }) => {
-  const [entries, setEntries] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState<'highestWave' | 'totalEnemiesKilled' | 'totalGoldEarned' | 'commanderLevel'>('highestWave');
-
-  useEffect(() => {
-    setLoading(true);
-    const q = query(collection(db, 'leaderboard'), orderBy(category, 'desc'), limit(50));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setLoading(false);
-    }, (error) => {
-      console.error(error);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, [category]);
-
-  const categories = [
-    { id: 'highestWave', name: 'Max Wave', icon: <Activity className="w-4 h-4" /> },
-    { id: 'totalEnemiesKilled', name: 'Kills', icon: <Skull className="w-4 h-4" /> },
-    { id: 'totalGoldEarned', name: 'Gold', icon: <Coins className="w-4 h-4" /> },
-    { id: 'commanderLevel', name: 'Level', icon: <Shield className="w-4 h-4" /> },
-  ];
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 md:p-8"
-    >
-      <div 
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl bg-[#050505] border border-cyan-500/30 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full relative"
-      >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent" />
-        
-        <div className="p-6 md:p-10 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-6 bg-white/5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
-              <Star className="w-6 h-6 text-cyan-400" />
-            </div>
-            <div>
-              <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter text-cyan-400">Global Rankings</h2>
-              <p className="text-white/40 font-mono text-[9px] md:text-xs uppercase tracking-[0.3em] mt-1">Elite Commander Network</p>
-            </div>
-          </div>
-          
-          <div className="flex bg-black/40 p-1 rounded-xl border border-white/10">
-            {categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setCategory(cat.id as any)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${category === cat.id ? 'bg-cyan-500 text-black' : 'text-white/40 hover:text-white'}`}
-              >
-                {cat.icon}
-                <span className="hidden sm:inline">{cat.name}</span>
-              </button>
-            ))}
-          </div>
-
-          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-2xl transition-colors">
-            <X className="w-6 h-6 text-white/40" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
-          {loading ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-4">
-              <Activity className="w-12 h-12 text-cyan-500 animate-spin" />
-              <p className="text-white/40 font-bold uppercase tracking-widest text-xs">Syncing Data Streams...</p>
-            </div>
-          ) : entries.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-4 text-center">
-              <Globe className="w-16 h-16 text-white/10" />
-              <h3 className="text-xl font-bold text-white/60 uppercase tracking-widest">No Data Recorded</h3>
-              <p className="text-white/30 text-sm max-w-xs">Be the first to leave your mark on the global network!</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {entries.map((entry, index) => (
-                <div 
-                  key={entry.id}
-                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${entry.userId === currentUserId ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]' : 'bg-white/5 border-white/10'}`}
-                >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg font-mono ${index === 0 ? 'bg-amber-500 text-black' : index === 1 ? 'bg-slate-300 text-black' : index === 2 ? 'bg-amber-700 text-white' : 'bg-white/5 text-white/40'}`}>
-                    {index + 1}
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-black text-white uppercase italic">{entry.nickname || 'Anonymous'}</h3>
-                      {entry.userId === currentUserId && (
-                        <span className="px-2 py-0.5 bg-cyan-500 text-black text-[8px] font-bold uppercase tracking-widest rounded">You</span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-white/20 font-mono uppercase tracking-widest">LVL {entry.commanderLevel} Commander</p>
-                  </div>
-
-                  <div className="text-right">
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-1">{categories.find(c => c.id === category)?.name}</p>
-                    <p className="text-xl font-black text-cyan-400 font-mono">
-                      {category === 'totalGoldEarned' 
-                        ? (entry[category] >= 1000 ? `${(entry[category] / 1000).toFixed(1)}K` : entry[category])
-                        : entry[category]}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 bg-white/5 border-t border-white/5 flex justify-between items-center">
-          <p className="text-[8px] text-white/20 uppercase tracking-[0.2em] font-mono">
-            Top 50 Commanders Synchronized
-          </p>
-          {entries.length > 0 && (
-            <p className="text-[8px] text-white/20 uppercase tracking-[0.2em] font-mono">
-              Last Sync: {new Date(Math.max(...entries.map(e => new Date(e.lastUpdated).getTime()))).toLocaleTimeString()}
-            </p>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-// --- Community Maps Component ---
-interface CommunityMapsProps {
-  onClose: () => void;
-  onPlay: (map: any) => void;
-}
-
-const CommunityMaps: React.FC<CommunityMapsProps> = ({ onClose, onPlay }) => {
-  const [maps, setMaps] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    const q = query(collection(db, 'community_maps'), orderBy('createdAt', 'desc'), limit(50));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMaps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setLoading(false);
-    }, (error) => {
-      console.error(error);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const filteredMaps = maps.filter(m => 
-    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.userName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
-    >
-      <div 
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-6xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] overflow-hidden flex flex-col max-h-full"
-      >
-        <div className="p-6 md:p-8 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
-              <Globe className="w-6 h-6 text-purple-400" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Community Maps</h2>
-              <p className="text-xs text-white/40 font-bold uppercase tracking-widest">Explore Player-Created Battlefields</p>
-            </div>
-          </div>
-          
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search maps or authors..."
-              className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors"
-            />
-          </div>
-
-          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-2xl transition-colors">
-            <X className="w-6 h-6 text-white/40" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 md:p-8">
-          {loading ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-4">
-              <Activity className="w-12 h-12 text-purple-500 animate-spin" />
-              <p className="text-white/40 font-bold uppercase tracking-widest text-xs">Scanning Network...</p>
-            </div>
-          ) : filteredMaps.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-4 text-center">
-              <MapIcon className="w-16 h-16 text-white/10" />
-              <h3 className="text-xl font-bold text-white/60 uppercase tracking-widest">No Maps Found</h3>
-              <p className="text-white/30 text-sm max-w-xs">Be the first to create and share a map with the community!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredMaps.map((map) => (
-                <button
-                  key={map.id}
-                  onClick={() => onPlay(map)}
-                  className="group relative bg-white/5 border border-white/10 rounded-3xl p-6 hover:bg-white/10 hover:border-purple-500/50 transition-all text-left flex flex-col gap-4 overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <MapIcon className="w-24 h-24" />
-                  </div>
-                  
-                  <div className="flex justify-between items-start">
-                    <div className="px-3 py-1 bg-purple-500/20 rounded text-[10px] font-bold text-purple-400 uppercase tracking-widest border border-purple-500/30">
-                      {map.cols}x{map.rows}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Published</p>
-                      <p className="text-[10px] text-white/40 font-mono">{new Date(map.createdAt).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xl font-black uppercase italic tracking-tight text-white group-hover:text-purple-400 transition-colors mb-1">{map.name}</h3>
-                    <p className="text-white/40 text-xs uppercase tracking-widest font-bold mb-2">By {map.userName}</p>
-                    <p className="text-white/30 text-[10px] line-clamp-2 leading-relaxed">{map.description || 'No description provided.'}</p>
-                  </div>
-
-                  <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
-                    <div className="flex gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <Play className="w-3 h-3 text-emerald-400" />
-                        <span className="text-[10px] font-bold text-white/40">{map.plays || 0}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Star className="w-3 h-3 text-amber-400" />
-                        <span className="text-[10px] font-bold text-white/40">{map.likes || 0}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Deploy</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2547,7 +227,7 @@ export default function App() {
   }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = subscribeToAuthChanges((user) => {
       setUser(user);
       setIsAuthReady(true);
     });
@@ -2864,9 +544,8 @@ export default function App() {
   };
 
   const handleSignIn = async () => {
-    const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      await signIn();
     } catch (error) {
       console.error('Error signing in:', error);
     }
@@ -2874,7 +553,7 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await logOut();
       // Reset local progress on sign out
       setUnlockedSectorCount(1);
       setHighestEndlessWaves({});
@@ -3120,12 +799,20 @@ export default function App() {
   const inventoryRef = useRef(inventory);
   const unlockedTurretsRef = useRef(unlockedTurrets);
   const unlockedUpgradesRef = useRef(unlockedUpgrades);
+  const scoreRef = useRef(0);
+  const enemiesKilledRef = useRef(0);
+  const totalEnemiesKilledRef = useRef(totalEnemiesKilled);
+  const totalGoldEarnedRef = useRef(totalGoldEarned);
+  const commanderExpRef = useRef(commanderExp);
 
   useEffect(() => { goldRef.current = gold; }, [gold]);
   useEffect(() => { livesRef.current = lives; }, [lives]);
   useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
   useEffect(() => { unlockedTurretsRef.current = unlockedTurrets; }, [unlockedTurrets]);
   useEffect(() => { unlockedUpgradesRef.current = unlockedUpgrades; }, [unlockedUpgrades]);
+  useEffect(() => { totalEnemiesKilledRef.current = totalEnemiesKilled; }, [totalEnemiesKilled]);
+  useEffect(() => { totalGoldEarnedRef.current = totalGoldEarned; }, [totalGoldEarned]);
+  useEffect(() => { commanderExpRef.current = commanderExp; }, [commanderExp]);
 
   const sellTurret = (turret: Turret) => {
     const sellValue = Math.floor(turret.config.cost * 0.75);
@@ -3135,160 +822,121 @@ export default function App() {
     SoundManager.playBuy(); // Reuse buy sound for selling
   };
 
-  const updateLogic = useCallback((deltaTime: number, virtualTime: number) => {
-    const isPaused = isPausedRef.current;
-    const gameOver = gameOverRef.current;
-    if (isPaused || gameOver) return;
-    const difficulty = difficultyRef.current;
-    const wave = waveRef.current;
-    const gameMode = gameModeRef.current;
-    const currentSectorIndex = currentSectorIndexRef.current;
-    const unlockedSectorCount = unlockedSectorCountRef.current;
-    
-    // Spawn Enemies
-    if (isWaveActive && enemiesToSpawnRef.current > 0 && difficulty) {
-      waveSpawnTimerRef.current += deltaTime;
-      if (waveSpawnTimerRef.current > 1000) { // 1 second between spawns
-        const config = DIFFICULTY_CONFIGS[difficulty];
-        const hp = (10 + wave * 5) * Math.pow(1.1, wave) * config.scaling;
-        const speed = (1 + wave * 0.02) * Math.pow(1.05, wave * 0.5) * config.scaling;
+  const updateLogic = useCallback((deltaTime: number) => {
+    const refs: GameRefs = {
+      enemiesRef,
+      turretsRef,
+      livesRef,
+      goldRef,
+      scoreRef,
+      waveRef,
+      gameTimeRef,
+      spawnTimerRef: waveSpawnTimerRef,
+      enemiesKilledRef,
+      totalEnemiesKilledRef,
+      totalGoldEarnedRef,
+      commanderExpRef,
+      isGameOverRef: gameOverRef,
+      isPausedRef
+    };
+
+    const params = {
+      difficulty: difficultyRef.current,
+      gameMode: gameModeRef.current,
+      currentSectorIndex: currentSectorIndexRef.current,
+      unlockedSectorCount: unlockedSectorCountRef.current,
+      isWaveActive: isWaveActiveRef.current,
+      enemiesToSpawnRef,
+      waveSpawnTimerRef,
+      PATHS,
+      encounteredEnemies,
+      user
+    };
+
+    const callbacks = {
+      onGameOver: () => {
+        setGameOver(true);
+        if (user && gameModeRef.current === GameMode.ENDLESS) {
+          saveProgress({ newEndlessSession: null, currentGold: goldRef.current, currentLives: livesRef.current });
+        }
+      },
+      onWaveComplete: () => {
+        setIsWaveActive(false);
         
-        let type = EnemyType.SQUARE;
-        if (gameMode === GameMode.ENDLESS || gameMode === GameMode.SANDBOX) {
-          if (wave % 10 === 0 && enemiesToSpawnRef.current === 1) {
-            type = EnemyType.STAR;
-          } else if (wave >= 3) {
-            const rand = Math.random();
-            if (wave >= 8 && rand < 0.2) type = EnemyType.CIRCLE;
-            else if (wave >= 5 && rand < 0.4) type = EnemyType.HEXAGON;
-          }
-        } else if (gameMode === GameMode.CAMPAIGN) {
-          const currentSector = CAMPAIGN_SECTORS[currentSectorIndex];
-          if (currentSectorIndex === 10 && wave === currentSector.wavesToWin && enemiesToSpawnRef.current === 1) {
-            type = EnemyType.STAR;
-          } else if (wave >= 3) {
-            const rand = Math.random();
-            if (wave >= 8 && rand < 0.2) type = EnemyType.CIRCLE;
-            else if (wave >= 5 && rand < 0.4) type = EnemyType.HEXAGON;
+        if (gameModeRef.current === GameMode.ENDLESS) {
+          const nextWave = waveRef.current + 1;
+          if (LORE_MESSAGES[nextWave]) {
+            setCurrentLore(LORE_MESSAGES[nextWave]);
           }
         }
         
-        const randomPath = PATHS[Math.floor(Math.random() * PATHS.length)];
-        const newEnemy = new Enemy(hp, speed, type, randomPath);
-        enemiesRef.current.push(newEnemy);
-        enemiesToSpawnRef.current--;
-        waveSpawnTimerRef.current = 0;
-
-        // Check encountered status only on spawn
-        if (!encounteredEnemies.has(type)) {
-          setEncounteredEnemies(prev => {
-            const next = new Set(prev);
-            next.add(type);
-            if (user) saveProgress({ newSectorCount: unlockedSectorCount, newEncountered: Array.from(next) as string[], currentGold: goldRef.current, currentLives: livesRef.current });
-            return next;
-          });
-          
-          if (type === EnemyType.STAR) {
-            setCurrentLore(ENEMY_CONFIGS[EnemyType.STAR].report.data);
-            SoundManager.playWaveStart();
+        if (gameModeRef.current === GameMode.CAMPAIGN) {
+          const sector = CAMPAIGN_SECTORS[currentSectorIndexRef.current];
+          if (waveRef.current >= sector.wavesToWin) {
+            setIsSectorComplete(true);
+            SoundManager.playVictory();
+            setUnlockedSectorCount(prev => {
+              const isLastSector = currentSectorIndexRef.current === 10;
+              const nextCount = (currentSectorIndexRef.current + 1 === prev && prev < 11) ? prev + 1 : prev;
+              if (user) saveProgress({ newSectorCount: nextCount, newWave: waveRef.current, currentGold: goldRef.current, currentLives: livesRef.current, campaignComplete: isLastSector });
+              return nextCount;
+            });
+          } else {
+            if (user) saveProgress({ newWave: waveRef.current, currentGold: goldRef.current, currentLives: livesRef.current });
+          }
+        } else if (gameModeRef.current === GameMode.ENDLESS || gameModeRef.current === GameMode.SANDBOX) {
+          if (user) {
+            const session = {
+              wave: waveRef.current,
+              gold: goldRef.current,
+              lives: livesRef.current,
+              turrets: turretsRef.current.map(t => ({
+                gridX: Math.floor(t.x / GRID_SIZE),
+                gridY: Math.floor(t.y / GRID_SIZE),
+                type: t.config.type,
+                level: t.level
+              })),
+              inventory: inventoryRef.current,
+              unlockedTurrets: Array.from(unlockedTurretsRef.current),
+              unlockedUpgrades: Array.from(unlockedUpgradesRef.current),
+              difficulty: difficultyRef.current
+            };
+            saveProgress({ newSectorCount: unlockedSectorCountRef.current, newWave: waveRef.current, newEndlessSession: session, expGain: 10, sessionSaved: true, currentGold: goldRef.current, currentLives: livesRef.current });
           }
         }
-      }
-    }
-
-    // Update Enemies
-    let goldEarned = 0;
-    let livesLost = 0;
-    let isGameOverTriggered = false;
-
-    for (let i = enemiesRef.current.length - 1; i >= 0; i--) {
-      const enemy = enemiesRef.current[i];
-      enemy.update(deltaTime);
-      if (enemy.isLeaked) {
-        livesLost++;
-        SoundManager.playThud();
-        enemiesRef.current.splice(i, 1);
-      } else if (enemy.isDead) {
-        goldEarned += 15;
+      },
+      onEnemyKilled: (enemy: Enemy) => {
         setTotalEnemiesKilled(prev => prev + 1);
         setTotalGoldEarned(prev => prev + 15);
         setEnemiesKilledThisRun(prev => prev + 1);
         setGoldEarnedThisRun(prev => prev + 15);
-        SoundManager.playDeath();
-        enemiesRef.current.splice(i, 1);
-      }
-    }
-
-    if (goldEarned > 0) {
-      goldRef.current += goldEarned;
-      setGold(goldRef.current);
-    }
-    if (livesLost > 0) {
-      livesRef.current = Math.max(0, livesRef.current - livesLost);
-      setLives(livesRef.current);
-      if (livesRef.current <= 0) isGameOverTriggered = true;
-    }
-    if (isGameOverTriggered) {
-      setGameOver(true);
-      gameOverRef.current = true;
-      if (user && gameMode === GameMode.ENDLESS) {
-        saveProgress({ newEndlessSession: null, currentGold: goldRef.current, currentLives: livesRef.current });
-      }
-    }
-
-    // Update Turrets
-    turretsRef.current.forEach(turret => {
-      turret.update(enemiesRef.current, virtualTime, deltaTime);
-    });
-
-    // Check Wave Completion
-    if (isWaveActiveRef.current && enemiesToSpawnRef.current === 0 && enemiesRef.current.length === 0) {
-      setIsWaveActive(false);
-      
-      if (gameMode === GameMode.ENDLESS) {
-        const nextWave = wave + 1;
-        if (LORE_MESSAGES[nextWave]) {
-          setCurrentLore(LORE_MESSAGES[nextWave]);
+      },
+      onBaseHit: () => {
+        setLives(livesRef.current);
+      },
+      onEncounterNewEnemy: (type: EnemyType) => {
+        setEncounteredEnemies(prev => {
+          const next = new Set(prev);
+          next.add(type);
+          if (user) saveProgress({ newSectorCount: unlockedSectorCountRef.current, newEncountered: Array.from(next) as string[], currentGold: goldRef.current, currentLives: livesRef.current });
+          return next;
+        });
+        
+        if (type === EnemyType.STAR) {
+          setCurrentLore(ENEMY_CONFIGS[EnemyType.STAR].report.data);
+          SoundManager.playWaveStart();
         }
+      },
+      onGoldUpdate: (gold: number) => {
+        setGold(gold);
+      },
+      onLivesUpdate: (lives: number) => {
+        setLives(lives);
       }
-      
-      if (gameMode === GameMode.CAMPAIGN) {
-        const sector = CAMPAIGN_SECTORS[currentSectorIndex];
-        if (wave >= sector.wavesToWin) {
-          setIsSectorComplete(true);
-          SoundManager.playVictory();
-          setUnlockedSectorCount(prev => {
-            const isLastSector = currentSectorIndex === 10;
-            const nextCount = (currentSectorIndex + 1 === prev && prev < 11) ? prev + 1 : prev;
-            if (user) saveProgress({ newSectorCount: nextCount, newWave: wave, currentGold: goldRef.current, currentLives: livesRef.current, campaignComplete: isLastSector });
-            return nextCount;
-          });
-        } else {
-          // Save progress on wave completion in campaign too
-          if (user) saveProgress({ newWave: wave, currentGold: goldRef.current, currentLives: livesRef.current });
-        }
-      } else if (gameMode === GameMode.ENDLESS || gameMode === GameMode.SANDBOX) {
-        if (user) {
-          const session = {
-            wave: wave,
-            gold: goldRef.current,
-            lives: livesRef.current,
-            turrets: turretsRef.current.map(t => ({
-              gridX: Math.floor(t.x / GRID_SIZE),
-              gridY: Math.floor(t.y / GRID_SIZE),
-              type: t.config.type,
-              level: t.level
-            })),
-            inventory: inventoryRef.current,
-            unlockedTurrets: Array.from(unlockedTurretsRef.current),
-            unlockedUpgrades: Array.from(unlockedUpgradesRef.current),
-            difficulty: difficulty
-          };
-          saveProgress({ newSectorCount: unlockedSectorCount, newWave: wave, newEndlessSession: session, expGain: 10, sessionSaved: true, currentGold: goldRef.current, currentLives: livesRef.current });
-        }
-      }
-    }
-  }, [isWaveActive, encounteredEnemies, user, PATHS]);
+    };
+
+    updateGameLogic(deltaTime, refs, params, callbacks);
+  }, [encounteredEnemies, user, PATHS, saveProgress]);
 
   // Auto-Start Effect for reliability
   useEffect(() => {
@@ -3536,7 +1184,7 @@ export default function App() {
       while (remainingDelta > 0) {
         const currentStep = Math.min(remainingDelta, step);
         virtualTimeRef.current += currentStep;
-        updateLogic(currentStep, virtualTimeRef.current);
+        updateLogic(currentStep);
         remainingDelta -= currentStep;
         if (remainingDelta < 1) break;
       }
@@ -4055,7 +1703,7 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-3 rounded-xl bg-black/40 border border-white/10" style={{ color: selectedMapTurret.config.color }}>
-                      {selectedMapTurret.config.icon}
+                      <Icon name={selectedMapTurret.config.iconName} className="w-5 h-5" />
                     </div>
                     <div>
                       <h3 className="text-sm font-black uppercase italic tracking-tight text-white">{selectedMapTurret.config.name}</h3>
@@ -4260,7 +1908,7 @@ export default function App() {
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div className="p-1.5 rounded-lg bg-black/40" style={{ color: config.color }}>
-                            {config.icon}
+                            <Icon name={config.iconName} className="w-4 h-4" />
                           </div>
                           <div className="flex items-center gap-1 text-yellow-400 font-mono text-[10px] md:text-sm font-bold">
                             <Coins className="w-3 h-3 md:w-4 md:h-4" />
@@ -4325,7 +1973,7 @@ export default function App() {
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="p-1.5 rounded-lg bg-black/40" style={{ color: config.color }}>
-                              {config.icon}
+                              <Icon name={config.iconName} className="w-4 h-4" />
                             </div>
                             <div className="bg-cyan-500 text-black px-2 py-0.5 rounded text-[10px] md:text-xs font-bold font-mono">
                               x{count}
@@ -6436,7 +4084,7 @@ export default function App() {
                               >
                                 <div className="flex items-center gap-2 md:gap-3 mb-1 md:mb-2">
                                   <div className="p-1.5 md:p-2 rounded-lg bg-white/5" style={{ color: isUnlocked ? config.color : '#444' }}>
-                                    {config.icon}
+                                    <Icon name={config.iconName} className="w-4 h-4" />
                                   </div>
                                   <span className="text-[8px] md:text-[10px] font-bold uppercase tracking-widest">{isUnlocked ? config.name : 'Unknown'}</span>
                                 </div>
@@ -6468,7 +4116,7 @@ export default function App() {
                               >
                                 <div className="flex items-center gap-2 md:gap-3 mb-1 md:mb-2">
                                   <div className="w-6 h-6 md:w-8 md:h-8 rounded-lg bg-white/5 flex items-center justify-center" style={{ color: isEncountered ? config.color : '#444' }}>
-                                    {isEncountered ? config.icon : <Skull className="w-3 h-3 md:w-4 md:h-4 text-white/10" />}
+                                    <Icon name={isEncountered ? config.iconName : 'Skull'} className="w-3 h-3 md:w-4 md:h-4" />
                                   </div>
                                   <span className="text-[8px] md:text-[10px] font-bold uppercase tracking-widest">{isEncountered ? config.name : 'Unknown'}</span>
                                 </div>
@@ -6492,7 +4140,7 @@ export default function App() {
                       <>
                         <div className={`flex items-center gap-6 ${isMobile && isLandscape ? 'mb-6' : 'mb-10'}`}>
                           <div className={`${isMobile && isLandscape ? 'w-12 h-12 rounded-xl' : 'w-20 h-20 rounded-3xl'} bg-white/5 flex items-center justify-center border border-white/10`} style={{ color: TURRET_CONFIGS[selectedLibraryUnit as TurretType].color }}>
-                            {React.cloneElement(TURRET_CONFIGS[selectedLibraryUnit as TurretType].icon as React.ReactElement, { className: isMobile && isLandscape ? 'w-6 h-6' : 'w-10 h-10' })}
+                            <Icon name={TURRET_CONFIGS[selectedLibraryUnit as TurretType].iconName} className={isMobile && isLandscape ? 'w-6 h-6' : 'w-10 h-10'} />
                           </div>
                           <div>
                             <div className="flex items-center gap-3 mb-2">
@@ -6572,7 +4220,7 @@ export default function App() {
                       <>
                         <div className={`flex items-center gap-6 ${isMobile && isLandscape ? 'mb-6' : 'mb-10'}`}>
                           <div className={`${isMobile && isLandscape ? 'w-12 h-12 rounded-xl' : 'w-20 h-20 rounded-3xl'} bg-white/5 flex items-center justify-center border border-white/10`} style={{ color: ENEMY_CONFIGS[selectedLibraryUnit as EnemyType].color }}>
-                            {React.cloneElement(ENEMY_CONFIGS[selectedLibraryUnit as EnemyType].icon as React.ReactElement, { className: isMobile && isLandscape ? 'w-6 h-6' : 'w-10 h-10' })}
+                            <Icon name={ENEMY_CONFIGS[selectedLibraryUnit as EnemyType].iconName} className={isMobile && isLandscape ? 'w-6 h-6' : 'w-10 h-10'} />
                           </div>
                           <div>
                             <div className="flex items-center gap-3 mb-2">
@@ -6744,5 +4392,3 @@ export default function App() {
     </div>
   );
 }
-
-
